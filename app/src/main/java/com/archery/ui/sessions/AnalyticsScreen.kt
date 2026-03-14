@@ -35,8 +35,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,14 +50,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.archery.analytics.AnalyticsParser
 import com.archery.analytics.DetectedShot
 import com.archery.analytics.HrPoint
 import com.archery.analytics.RoundAnalytics
 import com.archery.analytics.SensorSample
 import com.archery.analytics.SessionAnalytics
-import com.archery.analytics.loadDismissedShots
-import com.archery.analytics.saveDismissedShots
 import com.archery.shared.RoundSummary
 import com.archery.shared.ScoreZone
 import java.time.format.DateTimeFormatter
@@ -108,21 +103,11 @@ fun AnalyticsScreen(
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy  h:mm a")
 
-    // Parse the CSV and load dismissed shots on an IO thread — large sensor files
-    // would otherwise freeze the main thread for several seconds.
-    var analytics by remember { mutableStateOf<SessionAnalytics?>(null) }
-    var isAnalyticsLoading by remember { mutableStateOf(false) }
-    var dismissedState by remember { mutableStateOf<MutableMap<Int, MutableSet<Int>>>(mutableMapOf()) }
-
-    LaunchedEffect(session?.filePath) {
-        val path = session?.filePath?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
-        isAnalyticsLoading = true
-        val parsed = withContext(Dispatchers.IO) { AnalyticsParser.parse(path) }
-        val dismissed = withContext(Dispatchers.IO) { loadDismissedShots(path) }
-        analytics = parsed
-        dismissedState = dismissed
-        isAnalyticsLoading = false
-    }
+    // Analytics are parsed once per unique filePath in the ViewModel and cached there,
+    // so navigating away and back does not re-trigger the (potentially slow) parse.
+    val analytics by vm.analytics.collectAsState()
+    val isAnalyticsLoading by vm.isAnalyticsLoading.collectAsState()
+    val dismissedState by vm.dismissedState.collectAsState()
 
     Column(
         Modifier.fillMaxSize().background(ABgPage).verticalScroll(rememberScrollState())
@@ -326,22 +311,8 @@ fun AnalyticsScreen(
                         round = round,
                         ra = ra,
                         dismissedShotIndices = dismissed,
-                        onDismissShot = { i ->
-                            val updated = dismissedState.toMutableMap()
-                            updated[ra.origCsvRound] =
-                                (updated[ra.origCsvRound]?.toMutableSet() ?: mutableSetOf()).also { it.add(i) }
-                            dismissedState = updated
-                            s.filePath.takeIf { it.isNotEmpty() }
-                                ?.let { saveDismissedShots(it, updated) }
-                        },
-                        onRestoreShot = { i ->
-                            val updated = dismissedState.toMutableMap()
-                            updated[ra.origCsvRound] =
-                                (updated[ra.origCsvRound]?.toMutableSet() ?: mutableSetOf()).also { it.remove(i) }
-                            dismissedState = updated
-                            s.filePath.takeIf { it.isNotEmpty() }
-                                ?.let { saveDismissedShots(it, updated) }
-                        },
+                        onDismissShot = { i -> vm.dismissShot(ra.origCsvRound, i, s.filePath) },
+                        onRestoreShot = { i -> vm.restoreShot(ra.origCsvRound, i, s.filePath) },
                     )
                     Spacer(Modifier.height(8.dp))
                 }
