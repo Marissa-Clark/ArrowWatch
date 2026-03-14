@@ -1,0 +1,21 @@
+# Built artifacts
+*.iml
+local.properties
+build/
+*/build/
+out/
+
+# Android Studio
+.idea/
+*.swp
+.DS_Store
+
+# Keystore (never commit)
+*.jks
+*.keystore
+
+# Pulled CSV data (device output, not source)
+pulled_csvs/
+
+# Gradle wrapper jar (downloaded automatically)
+gradle/wrapper/gradle-wrapper.jar
