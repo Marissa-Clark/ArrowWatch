@@ -67,6 +67,21 @@ _project_root = Path(__file__).parent.parent
 _wsl_path = Path("/mnt/c/Users/maris/AndroidStudioProjects/ArcheryWatchAndPhoneApp/pulled_csvs")
 DEFAULT_CSV_DIR = str(_wsl_path if _wsl_path.exists() else _project_root / "pulled_csvs")
 
+# ═══════════════ SERVER-SIDE SESSION CACHE ═══════════════
+# Keeps parsed + detected session data in Python memory.
+# The browser only holds a tiny key string via dcc.Store.
+_session_cache: dict[str, dict] = {}  # key -> serialized session dict
+
+
+def _cache_put(key: str, data: dict):
+    _session_cache.clear()       # single-session app — free old memory
+    _session_cache[key] = data
+
+
+def _cache_get(key: str) -> dict | None:
+    return _session_cache.get(key)
+
+
 # ═══════════════ LAYOUT ═══════════════
 
 def make_param_input(param_id, label, default_val, step=0.1, min_val=0):
@@ -332,8 +347,11 @@ def load_session(csv_path, n_redetect, gz_min, gz_stdev, roll_max,
 
     session = detect_shots(session, params)
 
-    # Serialize to store
+    # Cache full data server-side; only send a key to the browser
     data = _serialize_session(session, csv_path)
+    import hashlib, time as _time
+    cache_key = hashlib.md5(f"{csv_path}:{_time.time()}".encode()).hexdigest()[:12]
+    _cache_put(cache_key, data)
 
     # Round dropdown options
     round_opts = [{"label": "All Rounds", "value": "all"}]
@@ -344,7 +362,7 @@ def load_session(csv_path, n_redetect, gz_min, gz_stdev, roll_max,
             "value": str(ra.round),
         })
 
-    return data, round_opts, "all"
+    return cache_key, round_opts, "all"
 
 
 def _serialize_session(session, csv_path):
@@ -411,7 +429,8 @@ def _serialize_session(session, csv_path):
     Output("summary-cards", "children"),
     Input("session-store", "data"),
 )
-def update_summary(data):
+def update_summary(cache_key):
+    data = _cache_get(cache_key) if cache_key else None
     if not data:
         return html.Div("Load a session to begin.", style={
             "color": COLORS["text_muted"], "padding": "40px", "textAlign": "center",
@@ -477,7 +496,8 @@ def update_summary(data):
     Input("calibration-clicks", "data"),
     Input("calibration-results", "data"),
 )
-def update_charts(data, round_filter, show_detrended, cal_clicks, cal_results):
+def update_charts(cache_key, round_filter, show_detrended, cal_clicks, cal_results):
+    data = _cache_get(cache_key) if cache_key else None
     if not data:
         return go.Figure().update_layout(
             paper_bgcolor=COLORS["bg"], plot_bgcolor=COLORS["bg"],
@@ -488,17 +508,40 @@ def update_charts(data, round_filter, show_detrended, cal_clicks, cal_results):
 
     show_det = "detrended" in (show_detrended or [])
 
-    times = np.array(data["sensor_time"])
-    gz = np.array(data["sensor_gz"])
-    roll_arr = np.array(data["sensor_roll"])
-    pitch_arr = np.array(data["sensor_pitch"])
-    yaw_arr = np.array(data["sensor_yaw"])
+    times_full = np.array(data["sensor_time"])
+    gz_full = np.array(data["sensor_gz"])
+    roll_full = np.array(data["sensor_roll"])
+    pitch_full = np.array(data["sensor_pitch"])
+    yaw_full = np.array(data["sensor_yaw"])
 
-    gz_d = np.array(data["gz_detrended"]) if data["gz_detrended"] else None
-    roll_d = np.array(data["roll_detrended"]) if data["roll_detrended"] else None
-    pitch_d = np.array(data["pitch_detrended"]) if data.get("pitch_detrended") else None
-    yaw_d = np.array(data["yaw_detrended"]) if data.get("yaw_detrended") else None
-    gz_stdev = np.array(data["gz_stdev_arr"]) if data["gz_stdev_arr"] else None
+    # Downsample for display — keep max 2000 points via LTTB-like decimation
+    MAX_POINTS = 2000
+    if len(times_full) > MAX_POINTS:
+        idx = _downsample_indices(times_full, gz_full, MAX_POINTS)
+        times = times_full[idx]
+        gz = gz_full[idx]
+        roll_arr = roll_full[idx]
+        pitch_arr = pitch_full[idx]
+        yaw_arr = yaw_full[idx]
+    else:
+        idx = None
+        times = times_full
+        gz = gz_full
+        roll_arr = roll_full
+        pitch_arr = pitch_full
+        yaw_arr = yaw_full
+
+    def _maybe_ds(arr_data):
+        if not arr_data:
+            return None
+        a = np.array(arr_data)
+        return a[idx] if idx is not None else a
+
+    gz_d = _maybe_ds(data["gz_detrended"])
+    roll_d = _maybe_ds(data["roll_detrended"])
+    pitch_d = _maybe_ds(data.get("pitch_detrended"))
+    yaw_d = _maybe_ds(data.get("yaw_detrended"))
+    gz_stdev = _maybe_ds(data["gz_stdev_arr"])
 
     hr_times = [h["time"] for h in data["hr_samples"]]
     hr_bpm = [h["bpm"] for h in data["hr_samples"]]
@@ -693,7 +736,8 @@ def update_charts(data, round_filter, show_detrended, cal_clicks, cal_results):
     Output("round-table", "children"),
     Input("session-store", "data"),
 )
-def update_round_table(data):
+def update_round_table(cache_key):
+    data = _cache_get(cache_key) if cache_key else None
     if not data:
         return ""
 
@@ -754,7 +798,8 @@ def update_round_table(data):
     Output("zone-chart-container", "children"),
     Input("session-store", "data"),
 )
-def update_zone_chart(data):
+def update_zone_chart(cache_key):
+    data = _cache_get(cache_key) if cache_key else None
     if not data or not data["rounds"]:
         return ""
 
@@ -918,7 +963,8 @@ def toggle_calibrate_style(n_clicks):
     prevent_initial_call=True,
 )
 def handle_calibration(click_data, clear_clicks, session_val,
-                       cal_toggle_clicks, current_clicks, session_data):
+                       cal_toggle_clicks, current_clicks, cache_key):
+    session_data = _cache_get(cache_key) if cache_key else None
     trigger = ctx.triggered_id
     clicks = list(current_clicks or [])
 
@@ -1033,6 +1079,31 @@ def _deserialize_for_calibration(data):
 
 
 # ═══════════════ HELPERS ═══════════════
+
+def _downsample_indices(times, values, max_points):
+    """
+    Min-max decimation: split data into buckets, keep the index of the
+    min and max value in each bucket. Preserves peaks/valleys for visual
+    fidelity while cutting point count roughly in half of max_points.
+    """
+    n = len(times)
+    bucket_size = max(n // (max_points // 2), 1)
+    indices = [0]  # always keep first
+    for b_start in range(0, n, bucket_size):
+        b_end = min(b_start + bucket_size, n)
+        chunk = values[b_start:b_end]
+        i_min = b_start + int(np.argmin(chunk))
+        i_max = b_start + int(np.argmax(chunk))
+        # Add in time order
+        lo, hi = min(i_min, i_max), max(i_min, i_max)
+        if lo != indices[-1]:
+            indices.append(lo)
+        if hi != lo:
+            indices.append(hi)
+    if indices[-1] != n - 1:
+        indices.append(n - 1)  # always keep last
+    return np.array(indices)
+
 
 def _hex_to_rgb(hex_color):
     """Convert '#RRGGBB' to 'R, G, B' string."""
