@@ -27,8 +27,18 @@ class LiveScoringViewModel(application: Application) : AndroidViewModel(applicat
 
     fun endSession() = sender.sendEndSession()
 
-    fun scoreArrow(round: Int, shotIndex: Int, zone: String, exactScore: Int? = null) =
-        sender.sendScoreArrow(round, shotIndex, zone, exactScore)
+    fun scoreArrow(round: Int, shotIndex: Int, zone: String, exactScore: Int? = null) {
+        val currentRound = session.value?.currentRound ?: 0
+        if (round < currentRound) {
+            // Completed round — update phone state directly; watch has moved on
+            val score = exactScore?.toFloat()
+                ?: com.archery.shared.ScoreZone.entries.find { it.name == zone }?.defaultScore
+                ?: 0f
+            LiveSessionRepository.editCompletedArrow(round, shotIndex, zone, score)
+        } else {
+            sender.sendScoreArrow(round, shotIndex, zone, exactScore)
+        }
+    }
 
     fun setRoundTotal(round: Int, total: Float) =
         sender.sendSetRoundTotal(round, total)

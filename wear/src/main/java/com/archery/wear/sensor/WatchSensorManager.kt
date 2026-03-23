@@ -43,6 +43,9 @@ class WatchSensorManager(private val context: Context) : SensorEventListener {
     /** Called ~1Hz for CSV sensor rows. Includes all three gravity axes. */
     var onSensorUpdate: ((yaw: Float, pitch: Float, roll: Float, gz: Float, steps: Long, gx: Float, gy: Float) -> Unit)? = null
 
+    /** Called once per detected step. */
+    var onStepDetected: (() -> Unit)? = null
+
     private var yaw = 0f
     private var pitch = 0f
     private var roll = 0f
@@ -103,6 +106,7 @@ class WatchSensorManager(private val context: Context) : SensorEventListener {
             }
             Sensor.TYPE_STEP_DETECTOR -> {
                 stepCount++
+                onStepDetected?.invoke()
             }
         }
     }

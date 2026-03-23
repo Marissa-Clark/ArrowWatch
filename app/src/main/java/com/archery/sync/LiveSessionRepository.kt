@@ -75,6 +75,14 @@ object LiveSessionRepository {
         _roundAnalytics.update { it + (round to shots) }
     }
 
+    /** Edit an arrow in a completed round locally on the phone (watch has moved on). */
+    fun editCompletedArrow(roundNumber: Int, shotIndex: Int, zoneName: String, score: Float) {
+        val s = _session.value ?: return
+        val zone = ScoreZone.entries.find { it.name == zoneName } ?: ScoreZone.fromLabel(zoneName)
+        val existing = s.findArrow(roundNumber, shotIndex) ?: LiveArrow(shotIndex)
+        _session.value = s.withArrow(roundNumber, existing.copy(zone = zone, score = score))
+    }
+
     fun clear() {
         _session.value = null
         _roundAnalytics.value = emptyMap()

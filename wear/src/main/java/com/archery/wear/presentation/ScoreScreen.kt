@@ -171,7 +171,7 @@ fun ScoreScreen(
                                 .size(width = 44.dp, height = 22.dp)
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(WatchSurfaceLight)
-                                .clickable { enteredTotal = roundColorTotal(round); showTotalEntry = true },
+                                .clickable { onSkip() },
                             contentAlignment = Alignment.Center,
                         ) {
                             Text("Skip", fontSize = 10.sp, color = WatchTextMuted)
