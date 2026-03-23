@@ -165,6 +165,11 @@ fun SessionListScreen(
             item { ScoreTrendChart(scoredSessions.reversed()) }
         }
 
+        val holdSessions = activeSessions.filter { (it.avgHoldMs ?: 0L) > 0L }
+        if (holdSessions.size >= 2) {
+            item { HoldTimeTrendChart(holdSessions.reversed()) }
+        }
+
         items(displaySessions, key = { it.id }) { s ->
             SessionCard(
                 session = s,
@@ -295,7 +300,10 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
                     modifier = Modifier.weight(1f))
                 if (!confirmDelete) {
                     if (avg > 0) {
-                        val pfx = if (session.rounds.all { it.confirmedScore != null }) "" else "~"
+                        // ~ only when zone midpoint estimates contributed (quick scores, no confirmed total)
+                        val pfx = if (session.rounds.any { r ->
+                            r.confirmedScore == null && (r.arrows.isEmpty() || r.arrows.any { !it.isFinal })
+                        }) "~" else ""
                         Text("$pfx%.1f / arrow".format(avg), fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold, color = Amber700,
                             modifier = Modifier.padding(end = 8.dp))
@@ -337,6 +345,57 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
                     if (durationMin > 0) Text("${durationMin}min", fontSize = 12.sp, color = TextSecondary)
                     val holdSec = (session.avgHoldMs ?: 0L).takeIf { it > 0L }?.let { it / 1000f }
                     if (holdSec != null) Text("%.1fs hold".format(holdSec), fontSize = 12.sp, color = Amber700)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HoldTimeTrendChart(sessions: List<SessionSummary>) {
+    val holds = sessions.map { (it.avgHoldMs ?: 0L) / 1000f }
+    val maxH = holds.max(); val minH = holds.min()
+    val range = (maxH - minH).coerceAtLeast(0.1f)
+
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = BgWhite),
+        shape = RoundedCornerShape(10.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Avg Hold / Arrow (s)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                color = TextPrimary)
+            Spacer(Modifier.height(8.dp))
+            Canvas(Modifier.fillMaxWidth().height(110.dp)) {
+                val w = size.width; val h = size.height
+                val pt = 8f; val pb = 24f; val ch = h - pt - pb
+                for (i in 0..3) {
+                    val y = pt + ch * (1 - i / 3f)
+                    drawLine(BorderLight, Offset(0f, y), Offset(w, y), 1f)
+                }
+                val pts = holds.mapIndexed { i, v ->
+                    Offset(
+                        if (holds.size > 1) w * i / (holds.size - 1f) else w / 2f,
+                        pt + ch * (1 - (v - minH) / range),
+                    )
+                }
+                val area = Path().apply {
+                    moveTo(pts.first().x, pt + ch)
+                    pts.forEach { lineTo(it.x, it.y) }
+                    lineTo(pts.last().x, pt + ch); close()
+                }
+                drawPath(area, Amber700.copy(0.15f))
+                val line = Path().apply {
+                    moveTo(pts.first().x, pts.first().y)
+                    for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
+                }
+                drawPath(line, Amber700, style = Stroke(2.5f))
+                pts.forEach { drawCircle(Amber700, 4f, it); drawCircle(BgWhite, 2f, it) }
+                val paint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.rgb(0x47, 0x55, 0x69)
+                    textSize = 22f; isAntiAlias = true
+                    textAlign = android.graphics.Paint.Align.CENTER
+                }
+                holds.forEachIndexed { i, v ->
+                    drawContext.canvas.nativeCanvas.drawText("%.1f".format(v),
+                        pts[i].x, pt + ch + pb - 4f, paint)
                 }
             }
         }

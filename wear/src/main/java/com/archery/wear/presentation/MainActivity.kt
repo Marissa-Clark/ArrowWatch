@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
         sensorMgr.onSensorUpdate = { yaw, pitch, roll, gz, steps, gx, gy ->
             sessionLogger.logSensor(System.currentTimeMillis(), yaw, pitch, roll, gz, steps, gx, gy)
         }
+        sensorMgr.onStepDetected = { viewModel.onStepDetected() }
 
         // Ask for permissions; don't gate the UI on the result.
         permLauncher.launch(

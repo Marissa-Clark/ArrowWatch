@@ -540,6 +540,7 @@ private fun RoundDetailsTable(
                         Text("Avg.", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                             color = ATextSecondary, textAlign = TextAlign.Center,
                             modifier = Modifier.width(avgW))
+                        Spacer(Modifier.weight(1f))
                     }
 
                     // Data rows
@@ -640,6 +641,7 @@ private fun RoundDetailsTable(
                                         color = AAmber800)
                                 }
                             }
+                            Spacer(Modifier.weight(1f))
                         }
                     }
                 }

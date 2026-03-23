@@ -755,7 +755,10 @@ private fun LiveRoundDetailsTable(
                         }
                     }
                     Box(Modifier.width(36.dp), contentAlignment = Alignment.Center) {
-                        val hr = round.latestHeartRate ?: 0f
+                        // Prefer average of per-shot HRs; fall back to round's latest reading
+                        val shotHrs = round.arrows.mapNotNull { it.heartRate }.filter { it > 0f }
+                        val hr = if (shotHrs.isNotEmpty()) shotHrs.average().toFloat()
+                                 else round.latestHeartRate ?: 0f
                         Text(
                             if (hr > 0) "%.0f".format(hr) else "—",
                             fontSize = 11.sp,
@@ -792,7 +795,11 @@ private fun LiveRoundDetailsTable(
                         fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Amber800,
                     )
                 }
-                val hrValues = rounds.mapNotNull { it.latestHeartRate }.filter { it > 0f }
+                // Overall HR: average of per-shot readings across all rounds
+                val hrValues = rounds.flatMap { r ->
+                    val shotHrs = r.arrows.mapNotNull { it.heartRate }.filter { it > 0f }
+                    shotHrs.ifEmpty { listOfNotNull(r.latestHeartRate) }
+                }.filter { it > 0f }
                 val avgHr = if (hrValues.isNotEmpty()) hrValues.average() else 0.0
                 Box(Modifier.width(36.dp), contentAlignment = Alignment.Center) {
                     Text(

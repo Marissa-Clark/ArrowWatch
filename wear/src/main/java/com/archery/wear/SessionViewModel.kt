@@ -92,6 +92,27 @@ class SessionViewModel : ViewModel() {
         _previousRoundInfo.value = null
     }
 
+    // ── Walk-based auto round split ───────────────────────────────────────────
+
+    private var stepsSinceLastShot = 0
+    private var lastShotMs = 0L
+    private val AUTO_SPLIT_STEPS = 8          // steps before auto-advancing
+    private val AUTO_SPLIT_MIN_QUIET_MS = 12_000L  // min ms since last shot
+
+    /** Called by MainActivity on each step detector event. */
+    fun onStepDetected() {
+        if (_phase.value != WatchPhase.SHOOTING) return
+        val round = _session.value?.currentRound ?: return
+        if (round.shots.isEmpty()) return  // nothing to split yet
+        stepsSinceLastShot++
+        if (stepsSinceLastShot >= AUTO_SPLIT_STEPS &&
+            System.currentTimeMillis() - lastShotMs >= AUTO_SPLIT_MIN_QUIET_MS
+        ) {
+            stepsSinceLastShot = 0
+            skipScoring()  // advance to next round without scoring
+        }
+    }
+
     // ── Shot recording ───────────────────────────────────────────────────────
 
     fun manualShot() {
@@ -104,6 +125,8 @@ class SessionViewModel : ViewModel() {
         val shot = WatchShot(number = round.shots.size + 1, heartRate = hr)
         _session.value = session.updateCurrentRound { it.copy(shots = it.shots + shot) }
 
+        stepsSinceLastShot = 0
+        lastShotMs = now
         _showQuickScore.value = true
         logger?.logShotDetected(now, round.number, shot.number, 0L, 0f, hr, manual = true)
         liveSyncManager?.sendShot(round.number, shot.number, 0L, hr, null)
