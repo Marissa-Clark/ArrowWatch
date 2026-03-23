@@ -28,11 +28,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -103,6 +106,7 @@ private fun fmtScore(v: Float): String =
 
 // ═══════════════ SCREEN ═══════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionDetailScreen(
     sessionId: Long,
@@ -268,13 +272,15 @@ fun SessionDetailScreen(
             ) {
                 Text("Round Details", fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
                     color = ATextPrimary)
-                Box(
-                    Modifier.clip(RoundedCornerShape(6.dp)).background(ACyan600)
-                        .clickable { showInsertDialog = true }
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                ) {
-                    Text("+ Round", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color.White)
+                CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(6.dp)).background(ACyan600)
+                            .clickable { showInsertDialog = true }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Text("+ Round", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                            color = Color.White)
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))
