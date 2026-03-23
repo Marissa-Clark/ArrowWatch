@@ -30,3 +30,6 @@ gradle/wrapper/gradle-wrapper.jar
 # Editor backups and Windows artifacts
 *.bak
 nul
+web/venv/
+web/profiles/
+web/__pycache__/
