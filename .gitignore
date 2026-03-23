@@ -19,3 +19,14 @@ pulled_csvs/
 
 # Gradle wrapper jar (downloaded automatically)
 gradle/wrapper/gradle-wrapper.jar
+
+# Gradle/Kotlin caches
+.gradle/
+.kotlin/
+
+# Claude Code local settings (device IDs, personal paths)
+.claude/
+
+# Editor backups and Windows artifacts
+*.bak
+nul
