@@ -3,6 +3,7 @@ package com.archery.ui.live
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.archery.analytics.DetectedShot
 import com.archery.shared.LiveSession
 import com.archery.sync.LiveSessionRepository
 import com.archery.sync.WatchCommandSender
@@ -16,6 +17,9 @@ class LiveScoringViewModel(application: Application) : AndroidViewModel(applicat
 
     val session: StateFlow<LiveSession?> = LiveSessionRepository.session
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val roundAnalytics: StateFlow<Map<Int, List<DetectedShot>>> = LiveSessionRepository.roundAnalytics
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     fun enterScoring() = sender.sendEnterScoring()
 

@@ -6,6 +6,9 @@ import android.provider.MediaStore
 import android.util.Log
 import com.archery.data.db.ArcheryDatabase
 import com.archery.data.repository.SessionRepository
+import com.archery.analytics.AnalyticsParser
+import com.archery.analytics.HrPoint
+import com.archery.analytics.SensorSample
 import com.archery.shared.ScoreZone
 import com.archery.shared.WearPaths
 import com.google.android.gms.wearable.DataEvent
@@ -80,6 +83,26 @@ class WatchListenerService : WearableListenerService() {
             // navigates back. The CSV (with full sensor data) arrives shortly after
             // via onDataChanged and is the authoritative source written to the DB.
             WearPaths.MSG_SESSION_END -> LiveSessionRepository.onSessionEnd()
+
+            WearPaths.MSG_ROUND_SENSOR_DATA -> {
+                val round       = p.optInt(WearPaths.KEY_ROUND, 0)
+                val sensorB64   = p.optString(WearPaths.KEY_SENSOR_DATA, "")
+                val hrB64       = p.optString(WearPaths.KEY_HR_DATA, "")
+                if (round > 0 && sensorB64.isNotEmpty()) {
+                    scope.launch {
+                        val shots = AnalyticsParser.detectShots(
+                            sensor           = decodeSensorBytes(
+                                android.util.Base64.decode(sensorB64, android.util.Base64.NO_WRAP)),
+                            walkingIntervals = emptyList(),
+                            hrSamples        = decodeHrBytes(
+                                android.util.Base64.decode(hrB64.ifEmpty { "" },
+                                    android.util.Base64.NO_WRAP)),
+                        )
+                        Log.i(TAG, "Round $round: detected ${shots.size} shots from live sensor data")
+                        LiveSessionRepository.onRoundAnalytics(round, shots)
+                    }
+                }
+            }
 
             else -> Log.d(TAG, "Unknown path: ${event.path}")
         }
@@ -180,6 +203,32 @@ class WatchListenerService : WearableListenerService() {
             Log.i(TAG, "CSV copied to Downloads/Archery/${srcFile.name}")
         } catch (e: Exception) {
             Log.w(TAG, "Failed to copy CSV to Downloads", e)
+        }
+    }
+
+    // ── Sensor data decoders ──────────────────────────────────────────────────
+
+    /** Decode packed floats [elapsed, gz, yaw, pitch, roll] — 20 bytes per row. */
+    private fun decodeSensorBytes(bytes: ByteArray): List<SensorSample> {
+        if (bytes.isEmpty()) return emptyList()
+        val buf = java.nio.ByteBuffer.wrap(bytes)
+        return (0 until bytes.size / 20).map {
+            SensorSample(
+                time  = buf.float,
+                gz    = buf.float,
+                yaw   = buf.float,
+                pitch = buf.float,
+                roll  = buf.float,
+            )
+        }
+    }
+
+    /** Decode packed floats [elapsed, bpm] — 8 bytes per row. */
+    private fun decodeHrBytes(bytes: ByteArray): List<HrPoint> {
+        if (bytes.isEmpty()) return emptyList()
+        val buf = java.nio.ByteBuffer.wrap(bytes)
+        return (0 until bytes.size / 8).map {
+            HrPoint(time = buf.float, bpm = buf.float)
         }
     }
 

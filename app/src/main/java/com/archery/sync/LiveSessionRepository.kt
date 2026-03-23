@@ -1,5 +1,6 @@
 package com.archery.sync
 
+import com.archery.analytics.DetectedShot
 import com.archery.shared.LiveArrow
 import com.archery.shared.LiveRound
 import com.archery.shared.LiveSession
@@ -8,6 +9,7 @@ import com.archery.shared.WatchPhase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Singleton live session state, updated by WatchListenerService as watch messages arrive.
@@ -16,6 +18,10 @@ object LiveSessionRepository {
 
     private val _session = MutableStateFlow<LiveSession?>(null)
     val session: StateFlow<LiveSession?> = _session.asStateFlow()
+
+    /** Per-round detected shots, populated as each round's sensor data is received. */
+    private val _roundAnalytics = MutableStateFlow<Map<Int, List<DetectedShot>>>(emptyMap())
+    val roundAnalytics: StateFlow<Map<Int, List<DetectedShot>>> = _roundAnalytics.asStateFlow()
 
     fun onSessionStart(arrowsPerRound: Int) {
         _session.value = LiveSession(arrowsPerRound = arrowsPerRound)
@@ -65,8 +71,13 @@ object LiveSessionRepository {
         _session.value = _session.value?.copy(isEnded = true)
     }
 
+    fun onRoundAnalytics(round: Int, shots: List<DetectedShot>) {
+        _roundAnalytics.update { it + (round to shots) }
+    }
+
     fun clear() {
         _session.value = null
+        _roundAnalytics.value = emptyMap()
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

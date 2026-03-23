@@ -9,7 +9,7 @@ enum class ScoreZone(
     val colorInt: Int,
     val defaultScore: Float,
 ) {
-    GOLD("GOLD",  0xFFFFD700.toInt(), 9.5f),
+    GOLD("YELLOW", 0xFFFFD700.toInt(), 9.5f),
     RED("RED",   0xFFEF4444.toInt(), 7.5f),
     BLUE("BLUE", 0xFF3B82F6.toInt(), 5.5f),
     BLACK("BLACK", 0xFF1E293B.toInt(), 3.5f),
@@ -18,7 +18,14 @@ enum class ScoreZone(
     DNS("DNS",   0xFF64748B.toInt(), 0f);
 
     companion object {
+        /**
+         * Resolves a zone from either its display label (e.g. "YELLOW") or its enum name
+         * (e.g. "GOLD" — still used in CSV rows and live-sync messages). Checking by enum
+         * name first ensures backward-compatible parsing of existing CSVs.
+         */
         fun fromLabel(label: String): ScoreZone =
-            entries.firstOrNull { it.label.equals(label, ignoreCase = true) } ?: MISS
+            entries.firstOrNull { it.name.equals(label, ignoreCase = true) }
+                ?: entries.firstOrNull { it.label.equals(label, ignoreCase = true) }
+                ?: MISS
     }
 }

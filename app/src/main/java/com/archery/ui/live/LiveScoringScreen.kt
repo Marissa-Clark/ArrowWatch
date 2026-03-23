@@ -3,6 +3,7 @@ package com.archery.ui.live
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -48,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.archery.analytics.DetectedShot
 import com.archery.shared.LiveRound
 import com.archery.shared.ScoreZone
 import com.archery.shared.WatchPhase
@@ -120,6 +124,7 @@ fun LiveScoringScreen(
     vm: LiveScoringViewModel = viewModel(),
 ) {
     val session by vm.session.collectAsState()
+    val roundAnalytics by vm.roundAnalytics.collectAsState()
 
     LaunchedEffect(session?.isEnded) {
         if (session?.isEnded == true) onBack()
@@ -225,6 +230,7 @@ fun LiveScoringScreen(
                         round = currentRound,
                         arrowsPerRound = s.arrowsPerRound,
                         completedRounds = completedRounds,
+                        roundAnalytics = roundAnalytics,
                         onEnterScoring = vm::enterScoring,
                         onEditArrow = { roundNum, shotIndex, zone, score ->
                             vm.scoreArrow(roundNum, shotIndex, zone.name, score)
@@ -282,6 +288,7 @@ private fun ShootingPhaseView(
     round: LiveRound?,
     arrowsPerRound: Int,
     completedRounds: List<LiveRound>,
+    roundAnalytics: Map<Int, List<DetectedShot>>,
     onEnterScoring: () -> Unit,
     onEditArrow: (roundNum: Int, shotIndex: Int, zone: ScoreZone, score: Int?) -> Unit,
 ) {
@@ -342,6 +349,17 @@ private fun ShootingPhaseView(
         )
         Spacer(Modifier.height(8.dp))
         LiveRoundDetailsTable(completedRounds, arrowsPerRound, onEditArrow = onEditArrow)
+
+        // ── Per-round hold-time chips ─────────────────────────────────────────
+        val analyticsRounds = completedRounds.filter { roundAnalytics[it.number]?.isNotEmpty() == true }
+        if (analyticsRounds.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            analyticsRounds.forEach { round ->
+                val shots = roundAnalytics[round.number].orEmpty()
+                Spacer(Modifier.height(4.dp))
+                DetectedShotChips(roundNumber = round.number, shots = shots)
+            }
+        }
     }
 }
 
@@ -846,6 +864,43 @@ private fun LiveRoundDetailsTable(
                 TextButton(onClick = { editTarget = null }) { Text("Cancel") }
             },
         )
+    }
+}
+
+// ── Detected-shot hold-time chips ─────────────────────────────────────────────
+
+@Composable
+private fun DetectedShotChips(roundNumber: Int, shots: List<DetectedShot>) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "R$roundNumber:",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = TextSecondary,
+            modifier = Modifier.width(30.dp),
+        )
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            shots.forEach { shot ->
+                val label = buildString {
+                    append("%.1fs".format(shot.holdSec))
+                    shot.hrAtShot?.let { append("  ${it.toInt()}bpm") }
+                }
+                AssistChip(
+                    onClick = {},
+                    label = { Text(label, fontSize = 11.sp) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = Amber100,
+                        labelColor = Amber800,
+                    ),
+                )
+            }
+        }
     }
 }
 

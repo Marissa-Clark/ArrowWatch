@@ -215,6 +215,15 @@ class SessionViewModel : ViewModel() {
 
         liveSyncManager?.sendRoundComplete(round.number, approxScore, actualScore)
 
+        // Snapshot and send the round's sensor data to the phone for live analytics.
+        // snapshotAndResetRoundBuffer posts to the same IO thread queue as the log writes
+        // above, so it always captures the complete round buffer.
+        val capturedRound = round.number
+        val sync = liveSyncManager
+        logger?.snapshotAndResetRoundBuffer { sensorBytes, hrBytes ->
+            sync?.sendRoundSensorData(capturedRound, sensorBytes, hrBytes)
+        }
+
         val nextRound = WatchRound(number = session.rounds.size + 1)
         _session.value = session.copy(rounds = session.rounds + nextRound)
         _phase.value = WatchPhase.SHOOTING

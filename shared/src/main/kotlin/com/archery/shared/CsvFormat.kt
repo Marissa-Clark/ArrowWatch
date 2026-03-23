@@ -27,8 +27,8 @@ object CsvFormat {
     const val COL_STEPS = 13
 
     // ── Event types ──────────────────────────────────────────────────────────
-    const val EVENT_SENSOR = "sensor"
-    const val EVENT_MANUAL_SHOT = "manual_shot"
+    const val EVENT_SENSOR      = "sensor"
+    const val EVENT_SCORING     = "scoring"     // user scored an arrow (was "manual_shot")
     const val EVENT_AUTO_SHOT   = "auto_shot"
     const val EVENT_QUICK_SCORE = "quick_score"
     const val EVENT_FINAL_SCORE = "final_score"
