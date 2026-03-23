@@ -37,11 +37,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,8 +49,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.archery.analytics.AnalyticsParser
-import com.archery.analytics.SessionAnalytics
 import com.archery.shared.RoundSummary
 import com.archery.shared.ScoreZone
 import androidx.compose.ui.platform.LocalConfiguration
@@ -125,18 +120,10 @@ fun SessionDetailScreen(
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy  h:mm a")
 
-    // Parse the CSV on an IO thread so the large sensor files don't freeze the main thread
-    val sessionAnalytics by produceState<SessionAnalytics?>(
-        initialValue = null,
-        key1 = session?.filePath,
-    ) {
-        val path = session?.filePath?.takeIf { it.isNotEmpty() }
-        value = if (path != null) withContext(Dispatchers.IO) { AnalyticsParser.parse(path) }
-                else null
-    }
+    // Analytics are loaded + cached by the ViewModel (AnalyticsCache) — instant on revisit.
+    val sessionAnalytics by vm.analytics.collectAsState()
+    val isAnalyticsLoading by vm.isAnalyticsLoading.collectAsState()
     val hasAnalytics = sessionAnalytics != null
-    // True while the IO parse is still running (file path known but result not yet ready)
-    val isAnalyticsLoading = session?.filePath?.isNotEmpty() == true && sessionAnalytics == null
     // Map roundNumber → avg hold time in seconds (from detected shots, falls back to 0)
     val analyticsHoldPerRound: Map<Int, Float> = remember(sessionAnalytics) {
         sessionAnalytics?.roundAnalytics?.associate { ra ->
@@ -171,7 +158,7 @@ fun SessionDetailScreen(
                                     .padding(vertical = 4.dp),
                             )
                             isAnalyticsLoading -> Text(
-                                "Analysing…", fontSize = 14.sp,
+                                "Analyzing…", fontSize = 14.sp,
                                 color = ATextMuted.copy(alpha = 0.7f),
                                 modifier = Modifier.padding(vertical = 4.dp),
                             )

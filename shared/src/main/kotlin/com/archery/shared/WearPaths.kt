@@ -12,6 +12,8 @@ object WearPaths {
 
     // ── Live messages (watch → phone) ────────────────────────────────────────
     const val MSG_SESSION_START = "/archery2/live/session_start"
+    /** Sent at end of each round; carries raw sensor rows so the phone can run analytics. */
+    const val MSG_ROUND_SENSOR_DATA = "/archery2/live/round_sensor_data"
     const val MSG_SHOT = "/archery2/live/shot"
     const val MSG_PHASE_CHANGE = "/archery2/live/phase_change"
     const val MSG_ARROW_SCORED = "/archery2/live/arrow_scored"
@@ -43,4 +45,8 @@ object WearPaths {
     const val KEY_SHOT_INDEX = "shotIndex"
     const val KEY_EXACT_SCORE = "exactScore"
     const val KEY_SESSION_START_MS = "sessionStartMs"
+    /** Base64-encoded packed floats [elapsed,gz,yaw,pitch,roll] per sensor row. */
+    const val KEY_SENSOR_DATA = "sensorData"
+    /** Base64-encoded packed floats [elapsed,bpm] per HR sample. */
+    const val KEY_HR_DATA = "hrData"
 }

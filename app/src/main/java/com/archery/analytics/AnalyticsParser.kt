@@ -1,9 +1,12 @@
 package com.archery.analytics
 
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.sqrt
+
+private const val DISMISSED_TAG = "DismissedShots"
 
 // ═══════════════ DATA MODELS ═══════════════
 
@@ -21,7 +24,7 @@ data class SensorSample(
 data class HrPoint(val time: Float, val bpm: Float)
 
 data class DetectedShot(
-    val time: Float,      // median of qualifying cluster
+    val time: Float,      // mid-point of hold window
     val startSec: Float,
     val endSec: Float,
     val holdSec: Float,   // end - start
@@ -64,9 +67,13 @@ fun dismissedFilePath(sessionCsvPath: String): String =
 
 fun loadDismissedShots(sessionCsvPath: String): MutableMap<Int, MutableSet<Int>> {
     val result = mutableMapOf<Int, MutableSet<Int>>()
+    val path = dismissedFilePath(sessionCsvPath)
     try {
-        val file = File(dismissedFilePath(sessionCsvPath))
-        if (!file.exists()) return result
+        val file = File(path)
+        if (!file.exists()) {
+            Log.d(DISMISSED_TAG, "No dismissed file at $path")
+            return result
+        }
         val json = JSONArray(file.readText())
         for (i in 0 until json.length()) {
             val obj = json.getJSONObject(i)
@@ -74,23 +81,32 @@ fun loadDismissedShots(sessionCsvPath: String): MutableMap<Int, MutableSet<Int>>
             val shotIndex = obj.getInt("shotIndex")
             result.getOrPut(round) { mutableSetOf() }.add(shotIndex)
         }
-    } catch (_: Exception) {}
+        Log.d(DISMISSED_TAG, "Loaded ${result.values.sumOf { it.size }} dismissed shots from $path")
+    } catch (e: Exception) {
+        Log.e(DISMISSED_TAG, "Failed to load dismissed shots from $path", e)
+    }
     return result
 }
 
 fun saveDismissedShots(sessionCsvPath: String, dismissed: Map<Int, Set<Int>>) {
+    val path = dismissedFilePath(sessionCsvPath)
     try {
         val arr = JSONArray()
         dismissed.forEach { (round, indices) ->
-            indices.forEach { idx ->
+            indices.sorted().forEach { idx ->
                 arr.put(JSONObject().apply {
                     put("round", round)
                     put("shotIndex", idx)
                 })
             }
         }
-        File(dismissedFilePath(sessionCsvPath)).writeText(arr.toString(2))
-    } catch (_: Exception) {}
+        val file = File(path)
+        file.parentFile?.mkdirs()          // ensure directory exists
+        file.writeText(arr.toString(2))
+        Log.d(DISMISSED_TAG, "Saved ${arr.length()} dismissed shots to $path")
+    } catch (e: Exception) {
+        Log.e(DISMISSED_TAG, "Failed to save dismissed shots to $path", e)
+    }
 }
 
 // ═══════════════ PARSER + SHOT DETECTION ═══════════════
@@ -105,27 +121,20 @@ private data class RoundWindow(
 
 object AnalyticsParser {
 
-    // Shoot mask: arm raised and holding at full draw
-    private const val SHOOT_GZ_MIN  = 5.0f
-    private const val SHOOT_GZ_MAX  = 7.5f
-    private const val SHOOT_YAW_MIN = -4.0f
-    private const val SHOOT_YAW_MAX = 3.5f
-    // Prep mask: arm in ready position before raising
-    private const val PREP_GZ_MIN    = -6.0f
-    private const val PREP_GZ_MAX    =  2.0f
-    private const val PREP_YAW_MIN   = -5.0f
-    private const val PREP_YAW_MAX   =  3.0f
-    private const val PREP_PITCH_MIN =  0.5f
-    private const val PREP_PITCH_MAX =  2.0f
-    private const val PREP_ROLL_MIN  =  1.0f
-    private const val PREP_ROLL_MAX  =  3.0f
-    // Clustering & filtering
-    private const val CLUSTER_GAP_SEC    = 3.0f
-    private const val HOLD_MIN_SEC       = 3.0f
-    private const val HOLD_MAX_SEC       = 12.0f
-    private const val PREP_LOOKBACK_SEC  = 10.0f
-    private const val GZ_LOW_LOOKBACK_SEC = 5.0f
-    private const val GZ_LOW_THRESH      = 3.0f
+    // ── Threshold detector constants ──────────────────────────────────────────
+    // All thresholds apply to DETRENDED signals (60-s rolling-median subtracted).
+    private const val DETREND_WIN_SEC    = 60f    // rolling-median window for detrending
+    private const val GZ_MIN_DETRENDED  =  2.0f  // detrended gz must be >= this
+    private const val GZ_STDEV_MAX      =  1.0f  // 2-s rolling stdev of gz_d <= this
+    private const val ROLL_MAX_DETRENDED = -0.5f  // detrended roll must be <= this
+    private const val STDEV_WIN_SEC      =  2.0f  // window for rolling stdev
+    private const val HOLD_MIN_SEC       =  3.0f  // minimum hold duration (s)
+    private const val HOLD_MAX_SEC       = 14.0f  // maximum hold duration (s)
+    private const val MERGE_GAP_SEC      =  1.0f  // merge segments within this gap (s)
+    private const val COOLDOWN_SEC       =  2.0f  // minimum gap between shots (s)
+
+    // Used only by findShootingGap for round splitting
+    private const val SPLIT_GZ_LOW = 5.0f
 
     fun parse(filePath: String): SessionAnalytics? {
         val file = File(filePath)
@@ -224,7 +233,7 @@ object AnalyticsParser {
                 cleanWalkingIntervals(walkStarts, walkStops, durationSec)
             }
 
-            val allShots = detectShots(sensorSamples, cleanWalking, hrSamples)
+            val allShots = detectShots(sensorSamples, hrSamples = hrSamples)
 
             val sortedRounds = roundScoreTimes.keys
                 .filter { it !in deletedRounds }
@@ -252,6 +261,13 @@ object AnalyticsParser {
                     .map { (ws, we) -> maxOf(ws, rw.start) to minOf(we, rw.end) }
                 val roundShots   = allShots.filter { it.time in rw.start..rw.end }
 
+                // HR: average only at detected shot times, not the whole round
+                val avgHr = roundShots
+                    .mapNotNull { it.hrAtShot }
+                    .takeIf { it.isNotEmpty() }
+                    ?.average()?.toFloat()
+                    ?: 0f
+
                 RoundAnalytics(
                     round            = rw.roundNum,
                     startSec         = rw.start,
@@ -260,8 +276,7 @@ object AnalyticsParser {
                     detectedShots    = roundShots,
                     sensorData       = roundSensor,
                     walkingIntervals = roundWalking,
-                    avgHr            = if (roundHr.isNotEmpty())
-                        roundHr.map { it.bpm }.average().toFloat() else 0f,
+                    avgHr            = avgHr,
                     hrSamples        = roundHr,
                     origCsvRound     = rw.origCsvRound,
                 )
@@ -323,97 +338,160 @@ object AnalyticsParser {
         return intervals
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Shot detection — threshold on detrended gz + roll
+    // ─────────────────────────────────────────────────────────────────────────
+
     fun detectShots(
         sensor: List<SensorSample>,
-        walkingIntervals: List<Pair<Float, Float>>,
+        walkingIntervals: List<Pair<Float, Float>> = emptyList(),
         hrSamples: List<HrPoint> = emptyList(),
     ): List<DetectedShot> {
         if (sensor.size < 3) return emptyList()
 
-        data class MaskedSample(val time: Float, val gz: Float, val isShoot: Boolean, val isPrep: Boolean)
+        val n = sensor.size
+        val halfDetrend = DETREND_WIN_SEC / 2f
+        val halfStdev   = STDEV_WIN_SEC   / 2f
 
-        val masked = sensor.map { s ->
-            val isWalking = walkingIntervals.any { (ws, we) -> s.time in ws..we }
-            val isShoot = !isWalking &&
-                s.gz in SHOOT_GZ_MIN..SHOOT_GZ_MAX &&
-                s.yaw in SHOOT_YAW_MIN..SHOOT_YAW_MAX
-            val isPrep = !isWalking &&
-                s.gz in PREP_GZ_MIN..PREP_GZ_MAX &&
-                s.yaw in PREP_YAW_MIN..PREP_YAW_MAX &&
-                s.pitch in PREP_PITCH_MIN..PREP_PITCH_MAX &&
-                s.roll in PREP_ROLL_MIN..PREP_ROLL_MAX
-            MaskedSample(s.time, s.gz, isShoot, isPrep)
+        // Reusable scratch buffer for sorting (avoids per-call allocation).
+        val buf = FloatArray(n)
+
+        // ── 1. Detrend gz and roll via 60-s centred rolling median ───────────
+        // Two-pointer sliding window: both lo and hi only advance forward
+        // (sensor times are monotonically non-decreasing), so total pointer
+        // work is O(n) amortised instead of the O(n²) full-scan approach.
+        val gzD   = FloatArray(n)
+        val rollD = FloatArray(n)
+        var lo = 0; var hi = 0
+        for (i in 0 until n) {
+            val t     = sensor[i].time
+            val winLo = t - halfDetrend
+            val winHi = t + halfDetrend
+            while (lo < n && sensor[lo].time  <  winLo) lo++
+            while (hi < n - 1 && sensor[hi + 1].time <= winHi) hi++
+            val winSize = (hi - lo + 1).coerceAtLeast(1)
+            // gz median
+            for (j in lo..hi) buf[j - lo] = sensor[j].gz
+            java.util.Arrays.sort(buf, 0, winSize)
+            val gzMed = if (winSize % 2 == 0) (buf[winSize / 2 - 1] + buf[winSize / 2]) / 2f
+                        else buf[winSize / 2]
+            // roll median (reuse buf)
+            for (j in lo..hi) buf[j - lo] = sensor[j].roll
+            java.util.Arrays.sort(buf, 0, winSize)
+            val rollMed = if (winSize % 2 == 0) (buf[winSize / 2 - 1] + buf[winSize / 2]) / 2f
+                          else buf[winSize / 2]
+            gzD[i]   = sensor[i].gz   - gzMed
+            rollD[i] = sensor[i].roll - rollMed
         }
 
-        val shootSamples = masked.filter { it.isShoot }
-        if (shootSamples.isEmpty()) return emptyList()
-
-        data class Cluster(val samples: MutableList<MaskedSample> = mutableListOf()) {
-            val startSec get() = samples.first().time
-            val endSec   get() = samples.last().time
-            val holdSec  get() = endSec - startSec
-            val midTime  get() = startSec + holdSec / 2
-            val gzMean   get() = samples.map { it.gz }.average().toFloat()
+        // ── 2. Rolling stdev of detrended gz (centred, STDEV_WIN_SEC) ────────
+        val gzStdevArr = FloatArray(n)
+        lo = 0; hi = 0
+        for (i in 0 until n) {
+            val t     = sensor[i].time
+            val winLo = t - halfStdev
+            val winHi = t + halfStdev
+            while (lo < n && sensor[lo].time  <  winLo) lo++
+            while (hi < n - 1 && sensor[hi + 1].time <= winHi) hi++
+            val winSize = hi - lo + 1
+            if (winSize < 2) { gzStdevArr[i] = 0f; continue }
+            var sum = 0.0
+            for (j in lo..hi) sum += gzD[j]
+            val mean = sum / winSize
+            var sumSq = 0.0
+            for (j in lo..hi) { val d = gzD[j] - mean; sumSq += d * d }
+            gzStdevArr[i] = sqrt(sumSq / winSize).toFloat()
         }
 
-        val clusters = mutableListOf<Cluster>()
-        var current = Cluster()
-        current.samples.add(shootSamples[0])
-        for (i in 1 until shootSamples.size) {
-            if (shootSamples[i].time - shootSamples[i - 1].time > CLUSTER_GAP_SEC) {
-                clusters.add(current)
-                current = Cluster()
-            }
-            current.samples.add(shootSamples[i])
+        // ── 3. Boolean mask ───────────────────────────────────────────────────
+        val mask = BooleanArray(n) { i ->
+            gzD[i]        >= GZ_MIN_DETRENDED &&
+            gzStdevArr[i] <= GZ_STDEV_MAX     &&
+            rollD[i]      <= ROLL_MAX_DETRENDED
         }
-        clusters.add(current)
 
-        val durationFiltered = clusters.filter { it.holdSec in HOLD_MIN_SEC..HOLD_MAX_SEC }
+        // ── 4. Find contiguous True segments ─────────────────────────────────
+        data class Seg(val s: Int, var e: Int) {
+            val tStart get() = sensor[s].time
+            val tEnd   get() = sensor[e].time
+            val hold   get() = tEnd - tStart
+        }
 
-        return durationFiltered.mapNotNull { cluster ->
-            val hasPrep = masked.any { m ->
-                m.isPrep && m.time in (cluster.startSec - PREP_LOOKBACK_SEC)..cluster.startSec
+        val segs = mutableListOf<Seg>()
+        var segStart: Int? = null
+        for (i in 0 until n) {
+            if (mask[i] && segStart == null) segStart = i
+            else if (!mask[i] && segStart != null) {
+                segs.add(Seg(segStart, i - 1)); segStart = null
             }
-            val hasGzLow = sensor.any { s ->
-                s.time in (cluster.startSec - GZ_LOW_LOOKBACK_SEC)..cluster.startSec &&
-                    s.gz < GZ_LOW_THRESH
+        }
+        if (segStart != null) segs.add(Seg(segStart, n - 1))
+        if (segs.isEmpty()) return emptyList()
+
+        // ── 5. Merge segments within MERGE_GAP_SEC ────────────────────────────
+        val merged = mutableListOf(segs[0])
+        for (seg in segs.drop(1)) {
+            if (seg.tStart - merged.last().tEnd <= MERGE_GAP_SEC) {
+                merged.last().e = seg.e
+            } else {
+                merged.add(seg)
             }
-            if (hasPrep || hasGzLow) {
-                val gzVals = cluster.samples.map { it.gz }
-                val gzStdev = if (gzVals.size > 1) {
-                    val mean = cluster.gzMean.toDouble()
-                    sqrt(gzVals.map { (it - mean) * (it - mean) }.average()).toFloat()
-                } else 0f
+        }
 
-                val hrAtShot: Float? = if (hrSamples.isEmpty()) null else {
-                    val mid = cluster.midTime
-                    val before = hrSamples.filter { it.time <= mid }.maxByOrNull { it.time }
-                    val after  = hrSamples.filter { it.time > mid }.minByOrNull { it.time }
-                    when {
-                        before != null && after != null -> {
-                            val t = (mid - before.time) / (after.time - before.time)
-                            before.bpm + t * (after.bpm - before.bpm)
-                        }
-                        before != null -> before.bpm
-                        after  != null -> after.bpm
-                        else           -> null
-                    }
-                }
+        // ── 6. Filter by duration + cooldown, build DetectedShot list ─────────
+        val shots = mutableListOf<DetectedShot>()
+        var lastExit = -999f
+        for (seg in merged) {
+            if (seg.hold < HOLD_MIN_SEC || seg.hold > HOLD_MAX_SEC) continue
+            if (seg.tStart - lastExit < COOLDOWN_SEC) continue
 
-                val window = sensor.filter { it.time in cluster.startSec..cluster.endSec }
+            val gzVals  = (seg.s..seg.e).map { sensor[it].gz }
+            val gzMean  = gzVals.average().toFloat()
+            val gzStdev = if (gzVals.size > 1) {
+                val mean = gzMean.toDouble()
+                sqrt(gzVals.map { (it - mean) * (it - mean) }.average()).toFloat()
+            } else 0f
 
-                DetectedShot(
-                    time         = cluster.midTime,
-                    startSec     = cluster.startSec,
-                    endSec       = cluster.endSec,
-                    holdSec      = cluster.holdSec,
-                    nSamples     = cluster.samples.size,
-                    gzMean       = cluster.gzMean,
-                    gzStdev      = gzStdev,
-                    hrAtShot     = hrAtShot,
-                    sensorWindow = window,
-                )
-            } else null
+            val midTime  = seg.tStart + seg.hold / 2f
+            val hrAtShot = interpolateHr(hrSamples, midTime)
+            val window   = sensor.subList(seg.s, seg.e + 1)
+
+            shots.add(DetectedShot(
+                time         = midTime,
+                startSec     = seg.tStart,
+                endSec       = seg.tEnd,
+                holdSec      = seg.hold,
+                nSamples     = seg.e - seg.s + 1,
+                gzMean       = gzMean,
+                gzStdev      = gzStdev,
+                hrAtShot     = hrAtShot,
+                sensorWindow = window,
+            ))
+            lastExit = seg.tEnd
+        }
+        return shots
+    }
+
+    private fun median(values: List<Float>): Float {
+        if (values.isEmpty()) return 0f
+        val sorted = values.sorted()
+        val mid = sorted.size / 2
+        return if (sorted.size % 2 == 0) (sorted[mid - 1] + sorted[mid]) / 2f
+        else sorted[mid]
+    }
+
+    private fun interpolateHr(hrSamples: List<HrPoint>, t: Float): Float? {
+        if (hrSamples.isEmpty()) return null
+        val before = hrSamples.filter { it.time <= t }.maxByOrNull { it.time }
+        val after  = hrSamples.filter { it.time >  t }.minByOrNull { it.time }
+        return when {
+            before != null && after != null -> {
+                val frac = (t - before.time) / (after.time - before.time)
+                before.bpm + frac * (after.bpm - before.bpm)
+            }
+            before != null -> before.bpm
+            after  != null -> after.bpm
+            else           -> null
         }
     }
 
@@ -492,7 +570,7 @@ object AnalyticsParser {
         val gaps      = mutableListOf<Gap>()
         var gapStart: Float? = null
         for (s in roundSensor) {
-            if (s.gz < SHOOT_GZ_MIN) {
+            if (s.gz < SPLIT_GZ_LOW) {
                 if (gapStart == null) gapStart = s.time
             } else {
                 if (gapStart != null) {

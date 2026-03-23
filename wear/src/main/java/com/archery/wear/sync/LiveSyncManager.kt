@@ -84,6 +84,21 @@ class LiveSyncManager(private val context: Context) {
     }
 
     /**
+     * Send raw sensor + HR data for a completed round so the phone can run
+     * AnalyticsParser.detectShots() and display hold-time chips immediately.
+     *
+     * @param sensorBytes packed floats [elapsed,gz,yaw,pitch,roll] — 20 bytes/row
+     * @param hrBytes     packed floats [elapsed,bpm]               —  8 bytes/row
+     */
+    fun sendRoundSensorData(round: Int, sensorBytes: ByteArray, hrBytes: ByteArray) {
+        send(WearPaths.MSG_ROUND_SENSOR_DATA, json {
+            put(WearPaths.KEY_ROUND, round)
+            put(WearPaths.KEY_SENSOR_DATA, android.util.Base64.encodeToString(sensorBytes, android.util.Base64.NO_WRAP))
+            put(WearPaths.KEY_HR_DATA,     android.util.Base64.encodeToString(hrBytes,     android.util.Base64.NO_WRAP))
+        })
+    }
+
+    /**
      * Send the final CSV file to the phone as a Data Layer Asset.
      * Must be called AFTER the logger has flushed and closed the file
      * (use SessionLogger.stopSessionAndThen to guarantee ordering).

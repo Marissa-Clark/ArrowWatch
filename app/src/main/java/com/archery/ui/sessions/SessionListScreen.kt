@@ -335,6 +335,8 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
                     Text("${session.rounds.size} rounds", fontSize = 12.sp, color = TextSecondary)
                     Text("${session.totalArrows} arrows", fontSize = 12.sp, color = TextSecondary)
                     if (durationMin > 0) Text("${durationMin}min", fontSize = 12.sp, color = TextSecondary)
+                    val holdSec = (session.avgHoldMs ?: 0L).takeIf { it > 0L }?.let { it / 1000f }
+                    if (holdSec != null) Text("%.1fs hold".format(holdSec), fontSize = 12.sp, color = Amber700)
                 }
             }
         }

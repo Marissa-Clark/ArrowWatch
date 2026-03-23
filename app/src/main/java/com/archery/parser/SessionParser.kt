@@ -98,7 +98,8 @@ object SessionParser {
                 CsvFormat.EVENT_DELETE_ROUND -> {
                     if (round != null) deletedRounds.add(round)
                 }
-                CsvFormat.EVENT_MANUAL_SHOT,
+                CsvFormat.EVENT_SCORING,
+                "manual_shot",              // backward-compat: old CSVs used this name
                 CsvFormat.EVENT_AUTO_SHOT -> {
                     if (round != null && holdMs != null && holdMs > 0) {
                         holdMsByRound.getOrPut(round) { mutableListOf() }.add(holdMs)

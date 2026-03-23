@@ -123,6 +123,13 @@ fun AnalyticsScreen(
                     verticalAlignment = Alignment.CenterVertically) {
                     Text("Back", fontSize = 14.sp, color = ATextSlate300,
                         modifier = Modifier.clickable { onBack() }.padding(vertical = 4.dp))
+                    // Refresh button — re-parses CSV; hidden while already loading
+                    if (!isAnalyticsLoading) {
+                        Text("↺ Refresh", fontSize = 13.sp, color = ACyan400,
+                            modifier = Modifier
+                                .clickable { vm.refreshAnalytics() }
+                                .padding(vertical = 4.dp, horizontal = 4.dp))
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
                 Text("Sensor Analytics", fontSize = 22.sp, fontWeight = FontWeight.Bold,
@@ -136,7 +143,7 @@ fun AnalyticsScreen(
                             fontSize = 12.sp, color = ACyan400)
                     }
                     isAnalyticsLoading ->
-                        Text("Analysing sensor data…", fontSize = 12.sp,
+                        Text("Analyzing sensor data…", fontSize = 12.sp,
                             color = ATextMuted.copy(alpha = 0.7f))
                 }
             }
@@ -208,7 +215,7 @@ fun AnalyticsScreen(
                         contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             if (isAnalyticsLoading) {
-                                Text("Analysing sensor data…", fontSize = 16.sp, color = ATextSecondary)
+                                Text("Analyzing sensor data…", fontSize = 16.sp, color = ATextSecondary)
                                 Spacer(Modifier.height(8.dp))
                                 Text("Large sessions may take a few seconds",
                                     fontSize = 13.sp, color = ATextMuted,
@@ -228,7 +235,7 @@ fun AnalyticsScreen(
                     // Charts from arrow data are showing, but sensor analysis still loading
                     Box(Modifier.fillMaxWidth().padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center) {
-                        Text("Analysing sensor data…", fontSize = 13.sp, color = ATextMuted)
+                        Text("Analyzing sensor data…", fontSize = 13.sp, color = ATextMuted)
                     }
                 }
                 Spacer(Modifier.height(16.dp))

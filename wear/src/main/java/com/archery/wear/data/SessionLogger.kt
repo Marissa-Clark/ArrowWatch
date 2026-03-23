@@ -35,6 +35,12 @@ class SessionLogger(private val context: Context) {
     private val ioThread = HandlerThread("SessionLoggerIO").apply { start() }
     private val ioHandler = Handler(ioThread.looper)
 
+    // Per-round in-memory buffers (populated on IO thread alongside CSV writes).
+    // Throttled to ~5 Hz so a 5-min round ≈ 1500 rows × 20 bytes ≈ 40 KB after base64.
+    private val roundSensorBuf = ArrayList<FloatArray>(1024)  // [elapsed, gz, yaw, pitch, roll]
+    private val roundHrBuf     = ArrayList<FloatArray>(64)    // [elapsed, bpm]
+    private var lastRoundBufMs = 0L
+
     init {
         val ext = context.getExternalFilesDir(null)
         baseDir = File(ext ?: context.filesDir, "Archery").also { it.mkdirs() }
@@ -47,6 +53,7 @@ class SessionLogger(private val context: Context) {
         val ts = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
         startTimeMs = System.currentTimeMillis()
         lastSensorLogMs = 0L
+        post { roundSensorBuf.clear(); roundHrBuf.clear(); lastRoundBufMs = 0L }
         ioHandler.post {
             try {
                 val file = File(baseDir, "session_$ts.csv")
@@ -66,12 +73,19 @@ class SessionLogger(private val context: Context) {
         lastSensorLogMs = timestampMs
         val elapsed = elapsed(timestampMs)
         val line = "%.1f,sensor,,,,%.2f,,,,,%.2f,%.2f,%.2f,%d,%.2f,%.2f".format(elapsed, gravityZ, yaw, pitch, roll, steps, gravityX, gravityY)
-        post { writer?.println(line) }
+        post {
+            writer?.println(line)
+            // Buffer at ~5 Hz for round sensor snapshot (40 KB max per round)
+            if (timestampMs - lastRoundBufMs >= 200L) {
+                lastRoundBufMs = timestampMs
+                roundSensorBuf.add(floatArrayOf(elapsed.toFloat(), gravityZ, yaw, pitch, roll))
+            }
+        }
     }
 
     fun logShotDetected(timestampMs: Long, round: Int, shotNumber: Int, holdMs: Long, gravityZ: Float, heartRate: Float, manual: Boolean = false) {
         val elapsed = elapsed(timestampMs)
-        val type = if (manual) "manual_shot" else "auto_shot"
+        val type = if (manual) "scoring" else "auto_shot"
         val line = "%.1f,%s,%d,%d,%d,%.2f,0.00,,,%.0f,,,".format(elapsed, type, round, shotNumber, holdMs, gravityZ, heartRate)
         post { writer?.println(line) }
     }
@@ -103,7 +117,10 @@ class SessionLogger(private val context: Context) {
         if (bpm <= 0f) return
         val elapsed = elapsed(timestampMs)
         val line = "%.1f,heart_rate,,,,,,,,%.0f,,,".format(elapsed, bpm)
-        post { writer?.println(line) }
+        post {
+            writer?.println(line)
+            roundHrBuf.add(floatArrayOf(elapsed.toFloat(), bpm))
+        }
     }
 
     fun logWalking(timestampMs: Long, walking: Boolean) {
@@ -146,6 +163,29 @@ class SessionLogger(private val context: Context) {
             writer = null
             Log.i(TAG, "Session stopped")
             onDone(capturedFile, capturedStart)
+        }
+    }
+
+    /**
+     * Serializes the current round's sensor and HR buffers into packed float ByteArrays,
+     * resets both buffers ready for the next round, then invokes [onResult] on the IO thread.
+     *
+     * Because everything posts to the same [ioHandler], this runs after all pending
+     * [logSensor] / [logHeartRate] calls — the snapshot is always complete.
+     *
+     * Sensor format: 5 floats per row — [elapsed, gz, yaw, pitch, roll]
+     * HR format:     2 floats per row — [elapsed, bpm]
+     */
+    fun snapshotAndResetRoundBuffer(onResult: (sensorBytes: ByteArray, hrBytes: ByteArray) -> Unit) {
+        post {
+            val sb = java.nio.ByteBuffer.allocate(roundSensorBuf.size * 5 * 4)
+            roundSensorBuf.forEach { row -> row.forEach { f -> sb.putFloat(f) } }
+            val hb = java.nio.ByteBuffer.allocate(roundHrBuf.size * 2 * 4)
+            roundHrBuf.forEach { row -> row.forEach { f -> hb.putFloat(f) } }
+            roundSensorBuf.clear()
+            roundHrBuf.clear()
+            lastRoundBufMs = 0L
+            onResult(sb.array(), hb.array())
         }
     }
 
