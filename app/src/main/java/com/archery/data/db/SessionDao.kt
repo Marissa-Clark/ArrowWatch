@@ -79,6 +79,9 @@ interface SessionDao {
     """)
     suspend fun updateArrowScore(sessionId: Long, roundNumber: Int, shotNumber: Int, zone: String, score: Float): Int
 
+    @Query("UPDATE rounds SET avgHoldMs = :holdMs WHERE sessionId = :sessionId AND roundNumber = :roundNumber")
+    suspend fun updateRoundHoldMs(sessionId: Long, roundNumber: Int, holdMs: Long): Int
+
     @Query("SELECT EXISTS(SELECT 1 FROM sessions WHERE fileName = :fileName)")
     suspend fun sessionExists(fileName: String): Boolean
 

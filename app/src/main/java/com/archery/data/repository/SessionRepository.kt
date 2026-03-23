@@ -137,6 +137,9 @@ class SessionRepository(db: ArcheryDatabase) {
     suspend fun deleteRound(sessionId: Long, roundNumber: Int) =
         dao.deleteRound(sessionId, roundNumber)
 
+    suspend fun updateRoundHoldMs(sessionId: Long, roundNumber: Int, holdMs: Long) =
+        dao.updateRoundHoldMs(sessionId, roundNumber, holdMs)
+
     suspend fun insertRoundAfter(sessionId: Long, afterRound: Int) {
         dao.shiftRoundNumbersPhase1(sessionId, afterRound)
         dao.shiftRoundNumbersPhase2(sessionId)

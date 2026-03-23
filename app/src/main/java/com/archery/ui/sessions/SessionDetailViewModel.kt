@@ -66,7 +66,22 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
                     _analytics.value = null
                     _isAnalyticsLoading.value = true
                     val parsed = withContext(Dispatchers.IO) { AnalyticsParser.parse(path) }
-                    if (parsed != null) AnalyticsCache.put(path, parsed)
+                    if (parsed != null) {
+                        AnalyticsCache.put(path, parsed)
+                        // Persist analytics-derived hold times so home screen can display them.
+                        val sessionId = session.value?.id ?: -1L
+                        if (sessionId >= 0) {
+                            withContext(Dispatchers.IO) {
+                                parsed.roundAnalytics.forEach { ra ->
+                                    if (ra.detectedShots.isNotEmpty()) {
+                                        val avgMs = ra.detectedShots.map { it.holdSec * 1000f }
+                                            .average().toLong()
+                                        repo.updateRoundHoldMs(sessionId, ra.origCsvRound, avgMs)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     _analytics.value = parsed
                     _isAnalyticsLoading.value = false
                 }
