@@ -20,6 +20,8 @@ data class SessionSummary(
     val isArchived: Boolean = false,
     /** User-supplied name; null = show default "Practice Session". */
     val displayName: String? = null,
+    /** True when the user has confirmed detection caught everything — suppresses re-run prompts. */
+    val analyticsLocked: Boolean = false,
 ) {
     val totalArrows: Int get() = rounds.sumOf { it.arrows.size }
     val totalNonDnsArrows: Int get() = rounds.sumOf { r -> r.arrows.count { it.zone != ScoreZone.DNS } }
