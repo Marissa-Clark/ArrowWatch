@@ -7,59 +7,43 @@
 <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: 'Inter', -apple-system, sans-serif; background: #0F172A; color: #F8FAFC; display: flex; height: 100vh; overflow: hidden; }
+body { font-family: 'Inter', -apple-system, sans-serif; background: #F8FAFC; color: #1E293B; display: flex; height: 100vh; overflow: hidden; }
 
-/* Sidebar */
-#sidebar { width: 270px; min-width: 270px; background: #1E293B; padding: 16px; overflow-y: auto; border-right: 1px solid #334155; display: flex; flex-direction: column; gap: 6px; }
-#sidebar h2 { color: #22D3EE; font-size: 20px; margin-bottom: 2px; }
-#sidebar .subtitle { color: #64748B; font-size: 12px; margin-bottom: 16px; }
-#sidebar label { font-size: 12px; color: #94A3B8; display: block; margin-bottom: 2px; }
-#sidebar input[type="number"], #sidebar input[type="text"], #sidebar select {
-  width: 100%; background: #0F172A; color: #F8FAFC; border: 1px solid #334155;
-  border-radius: 4px; padding: 6px 8px; font-size: 13px; margin-bottom: 4px;
-}
-#sidebar select { cursor: pointer; }
-.btn { width: 100%; border: none; border-radius: 4px; padding: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+#sidebar { width: 320px; min-width: 320px; background: #1E293B; padding: 12px; overflow-y: auto; border-right: 1px solid #E2E8F0; display: flex; flex-direction: column; gap: 4px; }
+#sidebar h2 { color: #0891B2; font-size: 18px; margin-bottom: 1px; }
+#sidebar .subtitle { color: #94A3B8; font-size: 11px; margin-bottom: 10px; }
+#sidebar label { font-size: 11px; color: #94A3B8; display: block; margin-bottom: 1px; }
+#sidebar .section-title { font-size: 12px; font-weight: 600; color: #F8FAFC; margin: 4px 0 2px; }
+.overlay-chart { height: 80px; margin: 2px 0; }
+.threshold-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.threshold-row label { flex-shrink: 0; width: 55px; font-size: 11px; color: #94A3B8; margin: 0; }
+.threshold-row input[type="range"] { flex: 1; height: 4px; accent-color: #0891B2; }
+.threshold-row input[type="number"] { width: 55px; background: #0F172A; color: #F8FAFC; border: 1px solid #334155; border-radius: 3px; padding: 3px 4px; font-size: 11px; text-align: center; }
+.param-row { display: flex; gap: 4px; }
+.param-row > div { flex: 1; }
+.param-row input[type="number"] { width: 100%; background: #0F172A; color: #F8FAFC; border: 1px solid #334155; border-radius: 3px; padding: 4px 5px; font-size: 11px; }
+.btn { width: 100%; border: none; border-radius: 4px; padding: 7px; cursor: pointer; font-size: 12px; font-weight: 600; }
 .btn-cyan { background: #0891B2; color: white; }
 .btn-amber { background: #D97706; color: white; }
 .btn-green { background: #16A34A; color: white; }
-.btn-outline { background: transparent; border: 1px solid #334155; color: #94A3B8; font-weight: 400; }
 .btn:hover { opacity: 0.9; }
-hr { border: none; border-top: 1px solid #334155; margin: 8px 0; }
-.param-row { display: flex; gap: 6px; }
-.param-row > div { flex: 1; }
-#calibration-stats { font-size: 11px; color: #94A3B8; }
-#calibration-stats table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-#calibration-stats th, #calibration-stats td { padding: 2px 4px; text-align: left; }
-#calibration-stats th { color: #64748B; }
-.suggested { color: #F59E0B; font-weight: 600; margin-top: 6px; }
-
-/* Main */
-#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-#summary { display: flex; gap: 8px; padding: 12px 16px; flex-wrap: wrap; }
-.stat-card { background: #1E293B; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; min-width: 110px; flex: 1; }
-.stat-card .value { font-size: 20px; font-weight: 700; }
-.stat-card .label { font-size: 11px; color: #94A3B8; }
-#controls { display: flex; align-items: center; gap: 12px; padding: 0 16px 8px; }
-#controls label { font-size: 13px; color: #94A3B8; }
-#controls select { background: #1E293B; color: #F8FAFC; border: 1px solid #334155; border-radius: 4px; padding: 4px 8px; font-size: 13px; }
-#controls input[type="checkbox"] { margin-right: 4px; }
-#chart-container { flex: 1; padding: 0 8px 8px; min-height: 0; }
-#bottom-row { display: flex; gap: 12px; padding: 8px 16px; max-height: 260px; overflow-y: auto; }
-#round-table-container { flex: 1; background: #1E293B; border: 1px solid #334155; border-radius: 8px; padding: 12px; overflow-y: auto; }
-#round-table-container h3 { font-size: 14px; margin-bottom: 8px; }
-#round-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-#round-table th { font-size: 11px; color: #94A3B8; font-weight: 600; padding: 6px 8px; text-align: left; border-bottom: 1px solid #334155; }
-#round-table td { padding: 6px 8px; border-bottom: 1px solid #334155; }
-#zone-chart-container { width: 320px; min-width: 320px; }
-
-/* File drop zone */
-#drop-zone { border: 2px dashed #334155; border-radius: 8px; padding: 40px; text-align: center; color: #64748B; cursor: pointer; margin: 8px 0; }
-#drop-zone.dragover { border-color: #22D3EE; color: #22D3EE; }
+hr { border: none; border-top: 1px solid #334155; margin: 6px 0; }
+#drop-zone { border: 2px dashed #334155; border-radius: 6px; padding: 24px 8px; text-align: center; color: #64748B; cursor: pointer; font-size: 12px; margin: 4px 0; }
+#drop-zone.dragover { border-color: #0891B2; color: #0891B2; }
 #file-input { display: none; }
+#shot-guidance { font-size: 11px; margin-top: 4px; padding: 6px; border-radius: 4px; background: #0F172A; border: 1px solid #334155; }
+#shot-guidance .match { color: #22C55E; }
+#shot-guidance .over { color: #D97706; }
+#shot-guidance .under { color: #EF4444; }
+#shot-guidance .hint { color: #94A3B8; font-size: 10px; margin-top: 3px; }
+#shot-guidance .hint b { color: #F8FAFC; }
+#profile-section select, #profile-section input[type="text"] { width: 100%; background: #0F172A; color: #F8FAFC; border: 1px solid #334155; border-radius: 3px; padding: 4px 6px; font-size: 11px; margin-bottom: 3px; }
 
-/* Loading overlay */
-#loading { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.85); z-index: 100; justify-content: center; align-items: center; font-size: 18px; color: #22D3EE; }
+#main { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+#chart-controls { display: flex; align-items: center; gap: 12px; padding: 8px 16px 4px; font-size: 12px; color: #475569; }
+#chart-controls input[type="range"] { width: 100px; accent-color: #0891B2; }
+#chart-accel, #chart-gyro { padding: 0 8px; }
+#loading { display: none; position: fixed; inset: 0; background: rgba(248,250,252,0.85); z-index: 100; justify-content: center; align-items: center; font-size: 18px; color: #0891B2; }
 #loading.active { display: flex; }
 </style>
 </head>
@@ -69,96 +53,79 @@ hr { border: none; border-top: 1px solid #334155; margin: 8px 0; }
 
 <div id="sidebar">
   <h2>ArrowWatch</h2>
-  <div class="subtitle">Session Analytics</div>
-
-  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
-    Drop CSV here or click to browse
-  </div>
+  <div class="subtitle">Sensor Analytics</div>
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">Drop CSV here or click to browse</div>
   <input type="file" id="file-input" accept=".csv">
 
-  <label>Session</label>
-  <select id="session-select" disabled><option>Load a CSV first</option></select>
+  <hr>
+  <div class="section-title">Shot Profiles</div>
+  <div id="overlay-gzD" class="overlay-chart"></div>
+  <div class="threshold-row"><label>gz_d min</label><input type="range" id="sl-gz-min" min="-3" max="6" step="0.05" value="0"><input type="number" id="p-gz-min" value="0" step="0.05"></div>
+  <div id="overlay-gzDdt" class="overlay-chart"></div>
+  <div class="threshold-row"><label>gz_ddt min</label><input type="range" id="sl-gz-ddt-min" min="-5" max="5" step="0.05" value="-5"><input type="number" id="p-gz-ddt-min" value="-5" step="0.05"></div>
+  <div class="threshold-row"><label>gz_ddt max</label><input type="range" id="sl-gz-ddt-max" min="-5" max="5" step="0.05" value="5"><input type="number" id="p-gz-ddt-max" value="5" step="0.05"></div>
 
   <hr>
-
-  <label style="font-size:13px;font-weight:600;color:#F8FAFC">Detection Parameters</label>
+  <div class="section-title">Detection Settings</div>
   <div class="param-row">
-    <div><label>gz_min_d</label><input type="number" id="p-gz-min" value="2.0" step="0.1"></div>
-    <div><label>gz_stdev_max</label><input type="number" id="p-gz-stdev" value="1.0" step="0.1"></div>
+    <div><label>duration</label><input type="number" id="p-hold-min" value="3.0" step="0.5"></div>
+    <div><label>hold_max</label><input type="number" id="p-hold-max" value="14.0" step="0.5"></div>
   </div>
   <div class="param-row">
-    <div><label>roll_max_d</label><input type="number" id="p-roll-max" value="-0.5" step="0.1"></div>
+    <div><label>merge_gap</label><input type="number" id="p-merge" value="1.0" step="0.1"></div>
+    <div><label>cooldown</label><input type="number" id="p-cooldown" value="2.0" step="0.5"></div>
+  </div>
+  <div class="param-row">
     <div><label>detrend_win</label><input type="number" id="p-detrend" value="60" step="5"></div>
   </div>
-  <div class="param-row">
-    <div><label>hold_min_s</label><input type="number" id="p-hold-min" value="3.0" step="0.5"></div>
-    <div><label>hold_max_s</label><input type="number" id="p-hold-max" value="14.0" step="0.5"></div>
-  </div>
-  <div class="param-row">
-    <div><label>merge_gap_s</label><input type="number" id="p-merge" value="1.0" step="0.1"></div>
-    <div><label>cooldown_s</label><input type="number" id="p-cooldown" value="2.0" step="0.5"></div>
-  </div>
-  <label>stdev_win_s</label>
-  <input type="number" id="p-stdev-win" value="2.0" step="0.5">
-
-  <button class="btn btn-cyan" onclick="redetect()" style="margin-top:6px">Re-detect Shots</button>
+  <button class="btn btn-cyan" onclick="redetect()" style="margin-top:4px">Re-detect</button>
+  <button class="btn btn-amber" onclick="refineDetection()" style="margin-top:3px">Refine (remove outliers)</button>
 
   <hr>
-
-  <label style="font-size:13px;font-weight:600;color:#F8FAFC">Profiles</label>
-  <select id="profile-select"><option value="">Default</option></select>
-  <div style="display:flex;gap:4px;margin-top:4px">
-    <input type="text" id="profile-name" placeholder="Profile name" style="flex:1">
-    <button class="btn btn-amber" style="width:auto;padding:6px 12px" onclick="saveProfile()">Save</button>
+  <div class="section-title">Shot Count</div>
+  <div class="param-row">
+    <div><label>Expected</label><input type="number" id="expected-shots" value="" placeholder="auto"></div>
+    <div style="display:flex;align-items:end"><button class="btn btn-green" onclick="autoTune()" style="margin-bottom:0;padding:5px">Auto-Tune</button></div>
   </div>
+  <div id="shot-guidance"></div>
 
   <hr>
-
-  <label style="font-size:13px;font-weight:600;color:#F8FAFC">Calibration</label>
-  <div style="font-size:11px;color:#64748B;margin-bottom:6px">Click shot centers on chart to mark them</div>
-  <button class="btn btn-outline" id="cal-toggle" onclick="toggleCalibrate()">Enable Calibration</button>
-  <button class="btn btn-outline" onclick="clearCalibration()" style="margin-top:4px">Clear Marks</button>
-  <button class="btn btn-amber" onclick="applyCalibration()" style="margin-top:4px">Apply Suggested</button>
-  <div id="calibration-stats"></div>
+  <div id="profile-section">
+    <div class="section-title">Profiles</div>
+    <select id="profile-select"><option value="">Default</option></select>
+    <div style="display:flex;gap:4px;margin-top:3px">
+      <input type="text" id="profile-name" placeholder="Profile name" style="flex:1">
+      <button class="btn btn-amber" style="width:auto;padding:5px 10px;font-size:11px" onclick="saveProfile()">Save</button>
+    </div>
+  </div>
 </div>
 
 <div id="main">
-  <div id="summary"></div>
-  <div id="controls">
-    <label>Round:</label>
-    <select id="round-select"><option value="all">All Rounds</option></select>
-    <label><input type="checkbox" id="show-detrended"> Show detrended</label>
+  <div id="chart-controls">
+    <label>Smooth: <input type="range" id="smooth-slider" min="1" max="15" step="2" value="1"> <span id="smooth-val">Off</span></label>
   </div>
-  <div id="chart-container"></div>
-  <div id="bottom-row">
-    <div id="round-table-container"><h3>Round Details</h3><table id="round-table"></table></div>
-    <div id="zone-chart-container"></div>
-  </div>
+  <div id="chart-accel"></div>
+  <div id="chart-gyro"></div>
+  <div id="chart-stab"></div>
 </div>
 
 <script>
 // ═══════════════ STATE ═══════════════
-let S = null;       // parsed session
-let calibrating = false;
-let calClicks = [];
-let calResults = null;
-const SHOT_COLORS = ['#22D3EE','#F59E0B','#EC4899','#22C55E','#A78BFA','#FB923C','#2DD4BF','#F472B6'];
+let S = null;
 
 // ═══════════════ CSV PARSING ═══════════════
 function parseCSV(text) {
   const lines = text.split('\n');
   if (lines.length < 2) return null;
-
   const sensor = { time:[], gz:[], roll:[], pitch:[], yaw:[], steps:[], gx:[], gy:[] };
   const hr = [];
   const walkStarts = [], walkStops = [];
   const roundScores = {}, roundScoreTimes = {}, deletedRounds = new Set();
   const arrowCounts = {};
-  const roundArrows = {};   // round -> {shot -> {shotNumber, zone, score, isFinal}}
+  const roundArrows = {};
   const roundHrVals = {};
   const roundHoldVals = {};
   let duration = 0;
-
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -167,7 +134,6 @@ function parseCSV(text) {
     const t = parseFloat(c[0]);
     if (isNaN(t)) continue;
     const ev = c[1].trim();
-
     switch (ev) {
       case 'sensor': {
         const gz = pf(c,5); if (gz === null) continue;
@@ -203,29 +169,19 @@ function parseCSV(text) {
       case 'session_end': duration = t; break;
     }
   }
-
   if (!sensor.time.length) return null;
   const n = sensor.time.length;
-
-  // Convert to typed arrays for speed
   const ta = k => new Float64Array(sensor[k]);
   const s = { time: ta('time'), gz: ta('gz'), roll: ta('roll'), pitch: ta('pitch'), yaw: ta('yaw'), steps: new Float64Array(sensor.steps), gx: ta('gx'), gy: ta('gy') };
-
   if (!duration) duration = Math.max(s.time[n-1] || 0, hr.length ? hr[hr.length-1].time : 0);
-
-  // Arrows per round (mode)
   let arrowsPerRound = 3;
   const acVals = Object.values(arrowCounts);
   if (acVals.length) {
     const freq = {}; acVals.forEach(v => freq[v] = (freq[v]||0)+1);
     arrowsPerRound = +Object.entries(freq).sort((a,b)=>b[1]-a[1])[0][0];
   }
-
-  // Walking
   const hasSteps = s.steps.some(v => v > 0);
   const walking = hasSteps ? deriveWalkingFromSteps(s) : cleanWalkingIntervals(walkStarts, walkStops, duration);
-
-  // Rounds
   const sortedRnds = Object.keys(roundScoreTimes).map(Number).filter(r=>!deletedRounds.has(r)).sort((a,b)=>a-b);
   const rounds = sortedRnds.map(r => {
     const arrows = Object.values(roundArrows[r]||{}).sort((a,b)=>a.shotNumber-b.shotNumber);
@@ -238,12 +194,11 @@ function parseCSV(text) {
       avgHr: hrV.length ? hrV.reduce((a,b)=>a+b,0)/hrV.length : null,
       avgHoldMs: holdV.length ? Math.round(holdV.reduce((a,b)=>a+b,0)/holdV.length) : null };
   });
-
   return { sensor: s, n, hr, walking, duration, rounds, arrowsPerRound,
-    shots: [], roundAnalytics: [],
-    gzD: null, rollD: null, pitchD: null, yawD: null, gzStdev: null };
+    shots: [], roundAnalytics: [], shotZScores: [],
+    gxD: null, gyD: null, gzD: null, rollD: null, pitchD: null, yawD: null, gzStdev: null,
+    gzDdt: null, gxDdt: null, yawDdt: null, pitchDdt: null, rollDdt: null, stabScore: null };
 }
-
 function pf(c, i, def=null) { if (i >= c.length) return def; const v = parseFloat(c[i]); return isNaN(v) ? def : v; }
 function pi(c, i, def=null) { if (i >= c.length) return def; const v = parseInt(c[i]); return isNaN(v) ? def : v; }
 
@@ -257,7 +212,6 @@ function cleanWalkingIntervals(starts, stops, dur) {
   }
   return res;
 }
-
 function deriveWalkingFromSteps(s) {
   const n = s.time.length, intervals = [];
   let walkStart = null;
@@ -273,12 +227,23 @@ function deriveWalkingFromSteps(s) {
 }
 
 // ═══════════════ SHOT DETECTION ═══════════════
+function computeDdt(arr, times, n, step) {
+  const out = new Float64Array(n);
+  for (let i = step; i < n - step; i++) {
+    const dt = times[i + step] - times[i - step];
+    if (dt > 0.001) out[i] = (arr[i + step] - arr[i - step]) / dt;
+  }
+  for (let i = 0; i < step; i++) out[i] = out[step];
+  for (let i = n - step; i < n; i++) out[i] = out[n - step - 1];
+  return out;
+}
+
 function detectShots(session, params) {
   const p = params || getParams();
   const s = session.sensor, n = session.n;
   if (n < 3) return;
-
   const times = s.time, gzRaw = s.gz, rollRaw = s.roll, pitchRaw = s.pitch, yawRaw = s.yaw;
+  const gxRaw = s.gx, gyRaw = s.gy;
   const dur = Math.max(times[n-1] - times[0], 1);
   const sps = n / dur;
   const detrendWin = Math.max(Math.round(p.detrend_win_sec * sps), 3) | 1;
@@ -286,91 +251,106 @@ function detectShots(session, params) {
   const halfDW = detrendWin >> 1;
   const halfSW = stdevWin >> 1;
 
-  // Rolling median via sorted window (optimized for typed arrays)
-  function rollingMedian(arr, halfW) {
+  function rollingMean(arr, halfW) {
     const out = new Float64Array(n);
+    const prefix = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + arr[i];
     for (let i = 0; i < n; i++) {
       const lo = Math.max(0, i - halfW), hi = Math.min(n - 1, i + halfW);
-      const win = Array.from(arr.subarray(lo, hi + 1)).sort((a,b) => a - b);
-      const m = win.length >> 1;
-      out[i] = win.length % 2 ? win[m] : (win[m-1] + win[m]) / 2;
+      out[i] = (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1);
     }
     return out;
   }
 
-  // 1. Detrend
-  const gzMed = rollingMedian(gzRaw, halfDW);
-  const rollMed = rollingMedian(rollRaw, halfDW);
-  const pitchMed = rollingMedian(pitchRaw, halfDW);
-  const yawMed = rollingMedian(yawRaw, halfDW);
+  // Detrend all channels
+  const gzMed = rollingMean(gzRaw, halfDW);
+  const rollMed = rollingMean(rollRaw, halfDW);
+  const pitchMed = rollingMean(pitchRaw, halfDW);
+  const yawMed = rollingMean(yawRaw, halfDW);
+  const gxMed = rollingMean(gxRaw, halfDW);
+  const gyMed = rollingMean(gyRaw, halfDW);
   const gzD = new Float64Array(n), rollD = new Float64Array(n);
   const pitchD = new Float64Array(n), yawD = new Float64Array(n);
+  const gxD = new Float64Array(n), gyD = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    gzD[i] = gzRaw[i] - gzMed[i];
-    rollD[i] = rollRaw[i] - rollMed[i];
-    pitchD[i] = pitchRaw[i] - pitchMed[i];
-    yawD[i] = yawRaw[i] - yawMed[i];
+    gzD[i] = gzRaw[i] - gzMed[i]; rollD[i] = rollRaw[i] - rollMed[i];
+    pitchD[i] = pitchRaw[i] - pitchMed[i]; yawD[i] = yawRaw[i] - yawMed[i];
+    gxD[i] = gxRaw[i] - gxMed[i]; gyD[i] = gyRaw[i] - gyMed[i];
   }
 
-  // 2. Rolling stdev of gzD
+  // Rolling stdev of gzD
   const gzStdev = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     const lo = Math.max(0, i - halfSW), hi = Math.min(n - 1, i + halfSW);
-    const cnt = hi - lo + 1;
-    if (cnt < 2) continue;
+    const cnt = hi - lo + 1; if (cnt < 2) continue;
     let sum = 0; for (let j = lo; j <= hi; j++) sum += gzD[j];
     const mean = sum / cnt;
     let sumSq = 0; for (let j = lo; j <= hi; j++) { const d = gzD[j] - mean; sumSq += d * d; }
     gzStdev[i] = Math.sqrt(sumSq / cnt);
   }
 
-  // 3. Boolean mask
+  // Derivatives for all channels
+  const DSTEP = 3;
+  const gzDdt    = computeDdt(gzD,    times, n, DSTEP);
+  const gxDdt    = computeDdt(gxD,    times, n, DSTEP);
+  const yawDdt   = computeDdt(yawD,   times, n, DSTEP);
+  const pitchDdt = computeDdt(pitchD, times, n, DSTEP);
+  const rollDdt  = computeDdt(rollD,  times, n, DSTEP);
+
+  // Stability score for chart: gz_ddt (signed, so band is visible)
+  const stabScore = gzDdt;
+
+  // Detection mask: gz_ddt in [min, max] AND gzD >= gz_min_detrended
   const mask = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    mask[i] = (gzD[i] >= p.gz_min_detrended && gzStdev[i] <= p.gz_stdev_max && rollD[i] <= p.roll_max_detrended) ? 1 : 0;
+    mask[i] = (gzDdt[i] >= p.gz_ddt_min && gzDdt[i] <= p.gz_ddt_max && gzD[i] >= p.gz_min_detrended) ? 1 : 0;
   }
 
-  // 4. Contiguous segments
-  const segs = [];
-  let segStart = -1;
+  // Contiguous segments
+  const segs = []; let segStart = -1;
   for (let i = 0; i < n; i++) {
     if (mask[i] && segStart < 0) segStart = i;
     else if (!mask[i] && segStart >= 0) { segs.push([segStart, i-1]); segStart = -1; }
   }
   if (segStart >= 0) segs.push([segStart, n-1]);
 
-  // 5. Merge
+  // Merge
   const merged = [];
   for (const seg of segs) {
     if (merged.length && times[seg[0]] - times[merged[merged.length-1][1]] <= p.merge_gap_sec) {
       merged[merged.length-1][1] = seg[1];
-    } else {
-      merged.push([...seg]);
-    }
+    } else { merged.push([...seg]); }
   }
 
-  // 6. Filter + build shots
-  const shots = [];
-  let lastExit = -999;
+  // Filter + build shots
+  const walking = session.walking || [];
+  const isWalking = (tStart, tEnd) => walking.some(([ws,we]) => tStart < we && tEnd > ws);
+  const shots = []; let lastExit = -999;
   for (const [si, ei] of merged) {
     const hold = times[ei] - times[si];
     if (hold < p.hold_min_sec || hold > p.hold_max_sec) continue;
     if (times[si] - lastExit < p.cooldown_sec) continue;
+    if (isWalking(times[si], times[ei])) continue;
     let sum = 0, cnt = ei - si + 1;
     for (let j = si; j <= ei; j++) sum += gzRaw[j];
-    const gzMean = sum / cnt;
-    let sumSq = 0; const m = gzMean;
-    for (let j = si; j <= ei; j++) { const d = gzRaw[j] - m; sumSq += d * d; }
-    const gzStd = cnt > 1 ? Math.sqrt(sumSq / cnt) : 0;
+    const gzMeanV = sum / cnt;
+    let sumSq = 0;
+    for (let j = si; j <= ei; j++) { const d = gzRaw[j] - gzMeanV; sumSq += d * d; }
+    const gzStdV = cnt > 1 ? Math.sqrt(sumSq / cnt) : 0;
     const mid = times[si] + hold / 2;
     shots.push({ time: mid, startSec: times[si], endSec: times[ei], holdSec: hold,
-      nSamples: cnt, gzMean, gzStdev: gzStd, hrAtShot: interpHr(session.hr, mid) });
+      nSamples: cnt, gzMean: gzMeanV, gzStdev: gzStdV, hrAtShot: interpHr(session.hr, mid) });
     lastExit = times[ei];
   }
 
+  session.gxD = gxD; session.gyD = gyD;
   session.gzD = gzD; session.rollD = rollD; session.pitchD = pitchD; session.yawD = yawD;
-  session.gzStdev = gzStdev; session.shots = shots;
+  session.gzStdev = gzStdev;
+  session.gzDdt = gzDdt; session.gxDdt = gxDdt; session.yawDdt = yawDdt; session.pitchDdt = pitchDdt; session.rollDdt = rollDdt;
+  session.stabScore = stabScore;
+  session.shots = shots;
   buildRoundAnalytics(session);
+  computeShotZScores(session);
 }
 
 function interpHr(hr, t) {
@@ -392,242 +372,242 @@ function buildRoundAnalytics(session) {
       const rShots = session.shots.filter(s => s.time >= start && s.time <= end);
       const shotHrs = rShots.map(s=>s.hrAtShot).filter(h=>h!==null);
       ra.push({ round: r.number, startSec: start, endSec: end, score: r.displayScore,
-        shots: rShots, avgHr: shotHrs.length ? shotHrs.reduce((a,b)=>a+b,0)/shotHrs.length : 0,
-        origRound: r.number });
+        shots: rShots, avgHr: shotHrs.length ? shotHrs.reduce((a,b)=>a+b,0)/shotHrs.length : 0, origRound: r.number });
     }
   } else {
-    ra.push({ round: 1, startSec: 0, endSec: session.duration, score: 0,
-      shots: session.shots, avgHr: 0, origRound: 1 });
+    ra.push({ round: 1, startSec: 0, endSec: session.duration, score: 0, shots: session.shots, avgHr: 0, origRound: 1 });
   }
   session.roundAnalytics = ra;
 }
 
+function computeShotZScores(session) {
+  if (!session.shots.length || !session.gzD) { session.shotZScores = []; return; }
+  const times = session.sensor.time, n = session.n;
+  const metrics = ['gzD','gzStdev','rollD','pitchD','yawD'].filter(k => session[k]).map(k => ({ key: k, src: session[k] }));
+  function findIdx(target) {
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; times[mid] < target ? lo = mid + 1 : hi = mid; }
+    return lo;
+  }
+  const holdMeans = session.shots.map(shot => {
+    const jS = findIdx(shot.startSec), jE = Math.min(findIdx(shot.endSec) + 1, n);
+    const means = {};
+    metrics.forEach(m => { let sum = 0; for (let j = jS; j < jE; j++) sum += m.src[j]; means[m.key] = (jE - jS) > 0 ? sum / (jE - jS) : 0; });
+    return means;
+  });
+  const gMean = {}, gStd = {};
+  metrics.forEach(m => {
+    const vals = holdMeans.map(hm => hm[m.key]);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+    gMean[m.key] = mean; gStd[m.key] = Math.sqrt(variance);
+  });
+  session.shotZScores = session.shots.map((_, i) => {
+    let maxZ = 0;
+    metrics.forEach(m => { const std = gStd[m.key]; if (std > 0.001) { const z = Math.abs(holdMeans[i][m.key] - gMean[m.key]) / std; if (z > maxZ) maxZ = z; } });
+    return maxZ;
+  });
+}
+
 function getParams() {
   return {
-    gz_min_detrended: +$('p-gz-min').value, gz_stdev_max: +$('p-gz-stdev').value,
-    roll_max_detrended: +$('p-roll-max').value, detrend_win_sec: +$('p-detrend').value,
-    hold_min_sec: +$('p-hold-min').value, hold_max_sec: +$('p-hold-max').value,
-    merge_gap_sec: +$('p-merge').value, cooldown_sec: +$('p-cooldown').value,
-    stdev_win_sec: +$('p-stdev-win').value,
+    gz_min_detrended: +$('p-gz-min').value,
+    gz_ddt_min: +$('p-gz-ddt-min').value,
+    gz_ddt_max: +$('p-gz-ddt-max').value,
+    hold_min_sec: +$('p-hold-min').value,
+    hold_max_sec: +$('p-hold-max').value,
+    merge_gap_sec: +$('p-merge').value,
+    cooldown_sec: +$('p-cooldown').value,
+    detrend_win_sec: +$('p-detrend').value,
+    // kept for stdev computation in detectShots
+    gz_stdev_max: 999, stdev_win_sec: 2.0, roll_max_detrended: 999,
   };
+}
+
+// ═══════════════ TIME COMPRESSION ═══════════════
+function buildCompressedView(session) {
+  const sorted = [...session.walking].sort((a,b) => a[0] - b[0]);
+  // Merge walking intervals + gaps < 15s between them
+  const merged = [];
+  for (const [s, e] of sorted) {
+    if (merged.length && s - merged[merged.length-1][1] < 15) {
+      merged[merged.length-1][1] = Math.max(merged[merged.length-1][1], e);
+    } else { merged.push([s, e]); }
+  }
+  function inWalking(t) { for (const [s, e] of merged) { if (t >= s && t <= e) return true; } return false; }
+  function compress(t) {
+    let sub = 0;
+    for (const [s, e] of merged) { if (e <= t) sub += e - s; else if (s < t) sub += t - s; }
+    return t - sub;
+  }
+  const times = session.sensor.time, n = session.n;
+  const idx = [];
+  for (let i = 0; i < n; i++) { if (!inWalking(times[i])) idx.push(i); }
+  const ct = idx.map(i => compress(times[i]));
+  return { idx, ct, compress, merged };
+}
+
+// ═══════════════ SMOOTHING ═══════════════
+function smooth(arr, win) {
+  if (win <= 1) return arr;
+  const n = arr.length, out = new Array(n), half = win >> 1;
+  const ps = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) ps[i+1] = ps[i] + arr[i];
+  for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i - half), hi = Math.min(n - 1, i + half);
+    out[i] = (ps[hi+1] - ps[lo]) / (hi - lo + 1);
+  }
+  return out;
 }
 
 // ═══════════════ RENDERING ═══════════════
 function render() {
   if (!S) return;
-  renderSummary();
-  renderCharts();
-  renderRoundTable();
-  renderZoneChart();
+  renderMainCharts();
+  renderShotProfiles();
+  updateShotGuidance();
 }
 
-function renderSummary() {
-  const totalScore = S.rounds.reduce((s,r)=>s+r.displayScore,0);
-  const totalArrows = S.rounds.reduce((s,r)=>s+r.arrows.length,0);
-  const nonDns = S.rounds.reduce((s,r)=>s+r.arrows.filter(a=>a.zone!=='DNS').length,0);
-  const avgArrow = nonDns > 0 ? totalScore / nonDns : 0;
-  const holds = S.shots.map(s=>s.holdSec);
-  const avgHold = holds.length ? holds.reduce((a,b)=>a+b,0)/holds.length : 0;
-  const shotHrs = S.shots.map(s=>s.hrAtShot).filter(h=>h);
-  const avgHr = shotHrs.length ? shotHrs.reduce((a,b)=>a+b,0)/shotHrs.length : 0;
+function renderMainCharts() {
+  const cv = buildCompressedView(S);
+  const smoothWin = +$('smooth-slider').value;
 
-  const card = (label, value, color='#22D3EE') =>
-    `<div class="stat-card"><div class="value" style="color:${color}">${value}</div><div class="label">${label}</div></div>`;
+  // Pick non-walking samples
+  const pickRaw = (src) => cv.idx.map(i => src[i]);
+  const t = cv.ct;
 
-  $('summary').innerHTML = [
-    card('Rounds', S.roundAnalytics.length),
-    card('Detected Shots', S.shots.length),
-    card('Total Score', totalScore > 0 ? Math.round(totalScore) : '—', '#F59E0B'),
-    card('Avg/Arrow', avgArrow > 0 ? avgArrow.toFixed(1) : '—', '#F59E0B'),
-    card('Avg Hold', avgHold > 0 ? avgHold.toFixed(1)+'s' : '—', '#22C55E'),
-    card('Avg HR', avgHr > 0 ? Math.round(avgHr) : '—', '#EC4899'),
-  ].join('');
-}
-
-function renderCharts() {
-  const showDet = $('show-detrended').checked;
-  const roundFilter = $('round-select').value;
-  const s = S.sensor, n = S.n;
-
-  // Downsample for display
+  // Downsample
   const MAX = 3000;
-  let idx = null;
-  if (n > MAX) {
-    idx = downsampleIdx(s.time, s.gz, MAX);
-  }
-  const pick = (arr) => idx ? Array.from(idx).map(i => arr[i]) : Array.from(arr);
-  const t = pick(s.time);
-  const gz = pick(s.gz);
-  const roll = pick(s.roll);
-  const pitch = pick(s.pitch);
-  const yaw = pick(s.yaw);
-  const gzD = S.gzD ? pick(S.gzD) : null;
-  const rollD = S.rollD ? pick(S.rollD) : null;
-  const pitchD = S.pitchD ? pick(S.pitchD) : null;
-  const yawD = S.yawD ? pick(S.yawD) : null;
-  const gzStdev = S.gzStdev ? pick(S.gzStdev) : null;
-
-  // Time range
-  let tMin = t[0], tMax = t[t.length-1];
-  if (roundFilter !== 'all') {
-    const ra = S.roundAnalytics.find(r => r.round === +roundFilter);
-    if (ra) { tMin = ra.startSec - 5; tMax = ra.endSec + 5; }
+  let dispT = t, dispPick = pickRaw;
+  if (t.length > MAX) {
+    const rawGz = pickRaw(S.gzD);
+    const dsIdx = downsampleIdx(t, rawGz, MAX);
+    dispT = dsIdx.map(j => t[j]);
+    dispPick = (src) => { const full = pickRaw(src); return dsIdx.map(j => full[j]); };
   }
 
-  // Build subplots
-  const rows = showDet ? 6 : 5;
-  const titles = showDet
-    ? ['Gravity Z', 'GZ Detrended + Stdev', 'Pitch', 'Roll', 'Yaw', 'Heart Rate']
-    : ['Gravity Z', 'Pitch', 'Roll', 'Yaw', 'Heart Rate'];
+  const sm = (src) => smooth(dispPick(src), smoothWin);
+  const hasGx = S.sensor.gx.some(v => v !== 0);
 
-  const traces = [];
-  const ROW = {};
-  if (showDet) {
-    ROW.gz=1; ROW.gzd=2; ROW.pitch=3; ROW.roll=4; ROW.yaw=5; ROW.hr=6;
+  // Accel traces
+  const accelTraces = [];
+  accelTraces.push({ x:dispT, y:sm(S.gzD), mode:'lines', name:'gz_d', line:{color:'#0891B2',width:1.2} });
+  if (S.gzDdt) {
+    accelTraces.push({ x:dispT, y:sm(S.gzDdt), mode:'lines', name:'gz_ddt', line:{color:'#F97316',width:1,dash:'dot'}, opacity:0.85 });
+  }
+  if (hasGx) {
+    accelTraces.push({ x:dispT, y:sm(S.gxD), mode:'lines', name:'gx_d', line:{color:'#EF4444',width:1} });
+    accelTraces.push({ x:dispT, y:sm(S.gyD), mode:'lines', name:'gy_d', line:{color:'#16A34A',width:1} });
+  }
+
+  // Gyro traces
+  const gyroTraces = [
+    { x:dispT, y:sm(S.yawD), mode:'lines', name:'yaw', line:{color:'#D97706',width:1} },
+    { x:dispT, y:sm(S.pitchD), mode:'lines', name:'pitch', line:{color:'#0D9488',width:1} },
+    { x:dispT, y:sm(S.rollD), mode:'lines', name:'roll', line:{color:'#7C3AED',width:1} },
+  ];
+
+  // Shot shapes
+  const zScores = S.shotZScores || [];
+  function shotShapes() {
+    const shapes = [];
+    S.shots.forEach((shot, i) => {
+      const cs = cv.compress(shot.startSec), ce = cv.compress(shot.endSec);
+      const isOutlier = (zScores[i] || 0) > 2.5;
+      shapes.push({ type:'rect', x0:cs, x1:ce, y0:0, y1:1, xref:'x', yref:'y domain',
+        fillcolor: isOutlier ? 'rgba(239,68,68,0.2)' : 'rgba(8,145,178,0.18)',
+        line:{ color: isOutlier ? 'rgba(239,68,68,0.6)' : 'rgba(8,145,178,0.45)', width:1 } });
+    });
+    return shapes;
+  }
+
+  const chartLayout = (title, shapes) => ({
+    paper_bgcolor: '#F8FAFC', plot_bgcolor: 'white',
+    font: { color: '#475569', size: 11 },
+    margin: { l: 50, r: 20, t: 30, b: 30 },
+    height: 300,
+    title: { text: title, font: { size: 13, color: '#1E293B' } },
+    showlegend: true, legend: { font:{size:10}, bgcolor:'rgba(0,0,0,0)', x:1, xanchor:'right' },
+    hovermode: 'x unified', shapes,
+    xaxis: { gridcolor:'#E2E8F0', title:{text:'Time (s)',font:{size:10}} },
+    yaxis: { gridcolor:'#E2E8F0' },
+  });
+
+  Plotly.react('chart-accel', accelTraces, chartLayout('Acceleration (detrended)', shotShapes()),
+    { responsive:true, displayModeBar:true, modeBarButtonsToRemove:['lasso2d','select2d'] });
+  Plotly.react('chart-gyro', gyroTraces, chartLayout('Gyroscope (detrended)', shotShapes()),
+    { responsive:true, displayModeBar:true, modeBarButtonsToRemove:['lasso2d','select2d'] });
+
+  // Stability chart — max |ddt| across all channels, threshold line if set
+  if (S.stabScore) {
+    const p = getParams();
+    const stabY = cv.idx.map(i => S.stabScore[i]);
+    const stabTraces = [{ x:dispT, y:stabY, mode:'lines', name:'gz_ddt', line:{color:'#F97316',width:1.2} }];
+    const stabShapes = [...shotShapes()];
+    stabShapes.push({ type:'line', x0:dispT[0], x1:dispT[dispT.length-1], y0:p.gz_ddt_min, y1:p.gz_ddt_min, xref:'x', yref:'y', line:{color:'rgba(34,211,238,0.7)',width:1.5,dash:'dash'} });
+    stabShapes.push({ type:'line', x0:dispT[0], x1:dispT[dispT.length-1], y0:p.gz_ddt_max, y1:p.gz_ddt_max, xref:'x', yref:'y', line:{color:'rgba(239,68,68,0.7)',width:1.5,dash:'dash'} });
+    const stabLayout = { ...chartLayout('gz_ddt  (cyan = min bound, red = max bound)', stabShapes), height:200 };
+    Plotly.react('chart-stab', stabTraces, stabLayout, { responsive:true, displayModeBar:false });
   } else {
-    ROW.gz=1; ROW.pitch=2; ROW.roll=3; ROW.yaw=4; ROW.hr=5;
+    $('chart-stab').innerHTML = '';
+  }
+}
+
+function renderShotProfiles() {
+  if (!S || !S.shots.length || !S.gzD) {
+    ['gzD','gzDdt'].forEach(k => { $('overlay-'+k).innerHTML = ''; });
+    return;
+  }
+  const times = S.sensor.time, n = S.n;
+  const PAD = 3, maxShots = Math.min(S.shots.length, 30);
+  const zScores = S.shotZScores || [];
+  function findIdx(target) {
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; times[mid] < target ? lo = mid + 1 : hi = mid; }
+    return lo;
   }
 
-  // Helper to assign subplot
-  const ax = (row) => row === 1 ? 'y' : `y${row}`;
-  const xa = (row) => row === 1 ? 'x' : `x${row}`;
+  const p = getParams();
+  const overlays = [
+    { key:'gzD',   src:S.gzD,   label:'gz_d',   color:'#0891B2', threshold:p.gz_min_detrended, threshDir:'min' },
+    { key:'gzDdt', src:S.gzDdt, label:'gz_ddt', color:'#F97316', threshold2:[p.gz_ddt_min, p.gz_ddt_max] },
+  ];
 
-  traces.push({ x:t, y:gz, type:'scattergl', mode:'lines', name:'gz', yaxis:ax(ROW.gz),
-    line:{color:'#22D3EE',width:1}, hovertemplate:'%{y:.2f}' });
-
-  if (showDet && gzD) {
-    traces.push({ x:t, y:gzD, type:'scattergl', mode:'lines', name:'gz_d', yaxis:ax(ROW.gzd),
-      line:{color:'#22D3EE',width:1}, hovertemplate:'%{y:.2f}' });
-    if (gzStdev) traces.push({ x:t, y:gzStdev, type:'scattergl', mode:'lines', name:'gz_stdev', yaxis:ax(ROW.gzd),
-      line:{color:'#F59E0B',width:1,dash:'dot'}, hovertemplate:'%{y:.2f}' });
-  }
-
-  const pitchData = showDet && pitchD ? pitchD : pitch;
-  traces.push({ x:t, y:pitchData, type:'scattergl', mode:'lines', name:showDet?'pitch_d':'pitch', yaxis:ax(ROW.pitch),
-    line:{color:'#22C55E',width:1}, hovertemplate:'%{y:.2f}' });
-
-  const rollData = showDet && rollD ? rollD : roll;
-  traces.push({ x:t, y:rollData, type:'scattergl', mode:'lines', name:showDet?'roll_d':'roll', yaxis:ax(ROW.roll),
-    line:{color:'#A78BFA',width:1}, hovertemplate:'%{y:.2f}' });
-
-  const yawData = showDet && yawD ? yawD : yaw;
-  traces.push({ x:t, y:yawData, type:'scattergl', mode:'lines', name:showDet?'yaw_d':'yaw', yaxis:ax(ROW.yaw),
-    line:{color:'#F59E0B',width:1}, hovertemplate:'%{y:.2f}' });
-
-  if (S.hr.length) {
-    traces.push({ x:S.hr.map(h=>h.time), y:S.hr.map(h=>h.bpm), type:'scattergl', mode:'lines+markers',
-      name:'HR', yaxis:ax(ROW.hr), line:{color:'#EC4899',width:1.5}, marker:{size:3}, hovertemplate:'%{y:.0f} bpm' });
-  }
-
-  // Build shapes (walking, rounds, shots, calibration)
-  const shapes = [], annotations = [];
-  const allAxPairs = [];
-  for (let r = 1; r <= rows; r++) allAxPairs.push({ xref: 'x', yref: r===1?'y paper':`y${r} paper` });
-
-  // Walking intervals
-  for (const [ws, we] of S.walking) {
-    for (let r = 1; r <= rows; r++) {
-      shapes.push({ type:'rect', x0:ws, x1:we, y0:0, y1:1,
-        xref:'x', yref:r===1?'y domain':`y${r} domain`,
-        fillcolor:'rgba(100,116,139,0.12)', line:{width:0} });
+  for (const ov of overlays) {
+    if (!ov.src) { $('overlay-'+ov.key).innerHTML = ''; continue; }
+    const traces = [];
+    for (let i = 0; i < maxShots; i++) {
+      const shot = S.shots[i];
+      const halfHold = shot.holdSec / 2;
+      const jS = findIdx(shot.time - halfHold - PAD);
+      const jE = Math.min(findIdx(shot.time + halfHold + PAD) + 1, n);
+      const relTime = [], vals = [];
+      for (let j = jS; j < jE; j++) { relTime.push(times[j] - shot.time); vals.push(ov.src[j]); }
+      const isOutlier = (zScores[i] || 0) > 2.5;
+      const r = parseInt(ov.color.slice(1,3),16), g = parseInt(ov.color.slice(3,5),16), b = parseInt(ov.color.slice(5,7),16);
+      traces.push({ x:relTime, y:vals, type:'scatter', mode:'lines',
+        line:{ color:`rgba(${r},${g},${b},${isOutlier ? 0.35 : 0.18})`, width:1 },
+        showlegend:false, hoverinfo:'skip' });
     }
-  }
-
-  // Round boundaries
-  for (const ra of S.roundAnalytics) {
-    for (let r = 1; r <= rows; r++) {
-      shapes.push({ type:'line', x0:ra.startSec, x1:ra.startSec, y0:0, y1:1,
-        xref:'x', yref:r===1?'y domain':`y${r} domain`,
-        line:{color:'rgba(148,163,184,0.3)',width:1,dash:'dash'} });
+    const shapes = [];
+    if (ov.threshold !== undefined) {
+      shapes.push({ type:'line', x0:-PAD-2, x1:PAD+2, y0:ov.threshold, y1:ov.threshold,
+        xref:'x', yref:'y', line:{color:'rgba(239,68,68,0.5)',width:1.5,dash:'dash'} });
     }
-  }
-
-  // Detected shots
-  S.shots.forEach((shot, i) => {
-    const col = SHOT_COLORS[i % SHOT_COLORS.length];
-    const rgb = hexToRgb(col);
-    for (let r = 1; r <= rows; r++) {
-      const ydom = r===1?'y domain':`y${r} domain`;
-      shapes.push({ type:'rect', x0:shot.startSec, x1:shot.endSec, y0:0, y1:1,
-        xref:'x', yref:ydom, fillcolor:`rgba(${rgb},0.12)`, line:{width:0} });
-      shapes.push({ type:'line', x0:shot.time, x1:shot.time, y0:0, y1:1,
-        xref:'x', yref:ydom, line:{color:col,width:1.5,dash:'dot'} });
+    if (ov.threshold2) {
+      const [lo, hi] = ov.threshold2;
+      shapes.push({ type:'line', x0:-PAD-2, x1:PAD+2, y0:lo, y1:lo, xref:'x', yref:'y', line:{color:'rgba(34,211,238,0.5)',width:1.5,dash:'dash'} });
+      shapes.push({ type:'line', x0:-PAD-2, x1:PAD+2, y0:hi, y1:hi, xref:'x', yref:'y', line:{color:'rgba(239,68,68,0.5)',width:1.5,dash:'dash'} });
     }
-    annotations.push({ x:shot.time, y:1, yref:'y domain', xref:'x',
-      text:`S${i+1}`, showarrow:false, font:{size:9,color:col} });
-  });
-
-  // Calibration marks
-  if (calResults && calResults.shots) {
-    calResults.shots.forEach((cs, j) => {
-      const col = '#22C55E';
-      for (let r = 1; r <= rows; r++) {
-        const ydom = r===1?'y domain':`y${r} domain`;
-        shapes.push({ type:'rect', x0:cs.startSec, x1:cs.endSec, y0:0, y1:1,
-          xref:'x', yref:ydom, fillcolor:'rgba(34,197,94,0.18)', line:{color:col,width:1} });
-        shapes.push({ type:'line', x0:cs.clickTime, x1:cs.clickTime, y0:0, y1:1,
-          xref:'x', yref:ydom, line:{color:col,width:2,dash:'dash'} });
-      }
-      annotations.push({ x:cs.clickTime, y:1, yref:'y domain', xref:'x',
-        text:`C${j+1}`, showarrow:false, font:{size:10,color:col} });
-    });
-  } else if (calClicks.length) {
-    calClicks.forEach((ct, j) => {
-      for (let r = 1; r <= rows; r++) {
-        shapes.push({ type:'line', x0:ct, x1:ct, y0:0, y1:1,
-          xref:'x', yref:r===1?'y domain':`y${r} domain`,
-          line:{color:'#22C55E',width:2,dash:'dash'} });
-      }
-      annotations.push({ x:ct, y:1, yref:'y domain', xref:'x',
-        text:`C${j+1}`, showarrow:false, font:{size:10,color:'#22C55E'} });
-    });
+    Plotly.react('overlay-'+ov.key, traces, {
+      paper_bgcolor:'#1E293B', plot_bgcolor:'#0F172A',
+      font:{color:'#64748B',size:9}, margin:{l:35,r:5,t:14,b:4},
+      height:80, showlegend:false, hovermode:false, shapes,
+      title:{text:ov.label,font:{size:9,color:'#94A3B8'},x:0.02,xanchor:'left'},
+      xaxis:{showticklabels:false,gridcolor:'rgba(51,65,85,0.3)',zeroline:true,zerolinecolor:'rgba(248,250,252,0.1)'},
+      yaxis:{gridcolor:'rgba(51,65,85,0.3)'},
+    }, { displayModeBar:false });
   }
-
-  // Layout with subplots
-  const gap = 0.02;
-  const heights = showDet ? [0.18,0.16,0.14,0.16,0.14,0.16] : [0.22,0.18,0.22,0.18,0.20];
-  const totalGap = gap * (rows - 1);
-  const scale = (1 - totalGap);
-
-  const layout = {
-    paper_bgcolor: '#0F172A', plot_bgcolor: '#0B1120',
-    font: { color: '#94A3B8', size: 11 },
-    margin: { l: 50, r: 20, t: 10, b: 30 },
-    showlegend: false, hovermode: 'x unified',
-    shapes, annotations,
-    xaxis: { range: [tMin, tMax], gridcolor: 'rgba(51,65,85,0.5)' },
-  };
-
-  // Build y-axes from bottom to top
-  let cumBottom = 0;
-  for (let r = rows; r >= 1; r--) {
-    const h = heights[r-1] * scale;
-    const key = r === 1 ? 'yaxis' : `yaxis${r}`;
-    layout[key] = {
-      domain: [cumBottom, cumBottom + h],
-      gridcolor: 'rgba(51,65,85,0.5)',
-      title: { text: titles[r-1], font: { size: 10 } },
-    };
-    cumBottom += h + gap;
-  }
-
-  const container = $('chart-container');
-  const chartH = container.clientHeight || 600;
-
-  Plotly.react('chart-container', traces, layout, {
-    responsive: true, displayModeBar: true,
-    modeBarButtonsToRemove: ['lasso2d','select2d'],
-  });
-
-  // Click handler for calibration
-  container.removeAllListeners?.('plotly_click');
-  container.on('plotly_click', (data) => {
-    if (!calibrating || !data.points.length) return;
-    const clickTime = data.points[0].x;
-    calClicks.push(clickTime);
-    runCalibration();
-    renderCharts(); // re-render with marks
-  });
 }
 
 function downsampleIdx(times, values, maxPts) {
@@ -649,202 +629,136 @@ function downsampleIdx(times, values, maxPts) {
   return indices;
 }
 
-function renderRoundTable() {
-  let html = '<thead><tr><th>Round</th><th>Shots</th><th>Score</th><th>Hold</th><th>HR</th><th>Duration</th></tr></thead><tbody>';
-  for (const ra of S.roundAnalytics) {
-    const nShots = ra.shots.length;
-    const holds = ra.shots.map(s=>s.holdSec);
-    const avgHold = holds.length ? (holds.reduce((a,b)=>a+b,0)/holds.length).toFixed(1)+'s' : '—';
-    const hrs = ra.shots.map(s=>s.hrAtShot).filter(h=>h);
-    const avgHr = hrs.length ? Math.round(hrs.reduce((a,b)=>a+b,0)/hrs.length) : '—';
-    const dur = Math.round(ra.endSec - ra.startSec);
-    const score = ra.score > 0 ? Math.round(ra.score) : '—';
-    html += `<tr>
-      <td style="color:#22D3EE">R${ra.round}</td>
-      <td>${nShots}</td>
-      <td style="color:#F59E0B">${score}</td>
-      <td style="color:#22C55E">${avgHold}</td>
-      <td style="color:#EC4899">${avgHr}</td>
-      <td>${dur}s</td>
-    </tr>`;
+// ═══════════════ SHOT GUIDANCE ═══════════════
+function getExpectedShots() {
+  const input = $('expected-shots').value;
+  if (input !== '' && !isNaN(+input)) return +input;
+  if (!S) return null;
+  const total = S.rounds.reduce((s,r) => s + r.arrows.filter(a => a.zone !== 'DNS').length, 0);
+  return total > 0 ? total : null;
+}
+function updateShotGuidance() {
+  const el = $('shot-guidance');
+  if (!S) { el.innerHTML = ''; return; }
+  const expected = getExpectedShots(), detected = S.shots.length;
+  if (expected === null) { el.innerHTML = `<div>Detected: <b style="color:#0891B2">${detected}</b></div>`; return; }
+  const diff = detected - expected;
+  let html = '';
+  if (diff === 0) {
+    html = `<div class="match">${detected} / ${expected}</div>`;
+  } else if (diff > 0) {
+    html = `<div class="over">${detected} / ${expected} (+${diff})</div>`;
+    html += `<div class="hint"><b>↑ gz_min</b> <b>↓ stdev_max</b> <b>↑ hold_min</b> <b>↑ cooldown</b></div>`;
+  } else {
+    html = `<div class="under">${detected} / ${expected} (${diff})</div>`;
+    html += `<div class="hint"><b>↓ gz_min</b> <b>↑ stdev_max</b> <b>↑ roll_max</b> <b>↓ hold_min</b></div>`;
   }
-  html += '</tbody>';
-  $('round-table').innerHTML = html;
-}
-
-function renderZoneChart() {
-  const counts = {};
-  S.rounds.forEach(r => r.arrows.forEach(a => { if(a.zone!=='DNS') counts[a.zone]=(counts[a.zone]||0)+1; }));
-  const order = ['GOLD','YELLOW','RED','BLUE','BLACK','WHITE','MISS'];
-  const zoneColors = {GOLD:'#F59E0B',YELLOW:'#F59E0B',RED:'#EF4444',BLUE:'#0EA5E9',BLACK:'#64748B',WHITE:'#CBD5E1',MISS:'#94A3B8'};
-  const zones = order.filter(z => z in counts);
-  if (!zones.length) { $('zone-chart-container').innerHTML = ''; return; }
-
-  Plotly.react('zone-chart-container', [{
-    x: zones, y: zones.map(z=>counts[z]), type: 'bar',
-    marker: { color: zones.map(z=>zoneColors[z]||'#94A3B8') },
-    text: zones.map(z=>counts[z]), textposition: 'auto',
-    textfont: { size: 12, color: 'white' },
-  }], {
-    paper_bgcolor:'#1E293B', plot_bgcolor:'#1E293B',
-    font:{color:'#94A3B8',size:11}, margin:{l:30,r:10,t:30,b:30}, height:230,
-    title:{text:'Zone Distribution',font:{size:14,color:'#F8FAFC'}},
-    xaxis:{gridcolor:'rgba(51,65,85,0.3)'}, yaxis:{gridcolor:'rgba(51,65,85,0.3)'},
-  }, { displayModeBar: false });
-}
-
-// ═══════════════ CALIBRATION ═══════════════
-function toggleCalibrate() {
-  calibrating = !calibrating;
-  const btn = $('cal-toggle');
-  btn.textContent = calibrating ? 'Calibrating... (click chart)' : 'Enable Calibration';
-  btn.style.background = calibrating ? '#16A34A' : 'transparent';
-  btn.style.color = calibrating ? 'white' : '#94A3B8';
-  btn.style.border = calibrating ? 'none' : '1px solid #334155';
-}
-
-function clearCalibration() {
-  calClicks = []; calResults = null;
-  $('calibration-stats').innerHTML = '';
-  if (S) renderCharts();
-}
-
-function runCalibration() {
-  if (!S || !S.gzD || !calClicks.length) return;
-  const times = S.sensor.time, gzD = S.gzD, rollD = S.rollD;
-  const pitchD = S.pitchD, yawD = S.yawD, gzStdev = S.gzStdev, gzRaw = S.sensor.gz;
-  const n = S.n;
-  const shots = [];
-
-  for (const ct of calClicks) {
-    let centerIdx = 0, minDist = Infinity;
-    for (let i = 0; i < n; i++) { const d = Math.abs(times[i]-ct); if (d < minDist) { minDist=d; centerIdx=i; } }
-
-    const dur = Math.max(times[n-1]-times[0],1);
-    const radius = Math.round(7 * n / dur);
-    const lo = Math.max(0, centerIdx - radius), hi = Math.min(n-1, centerIdx + radius);
-
-    let peakIdx = lo;
-    for (let j = lo+1; j <= hi; j++) if (gzD[j] > gzD[peakIdx]) peakIdx = j;
-
-    const thresh = Math.max(gzD[peakIdx] * 0.3, 0.5);
-    let si = peakIdx; while (si > 0 && gzD[si-1] >= thresh) si--;
-    let ei = peakIdx; while (ei < n-1 && gzD[ei+1] >= thresh) ei++;
-
-    const holdSec = times[ei] - times[si];
-    let gzDSum=0, gzDMin=Infinity, gzRawSum=0, gzStdSum=0, gzStdMax=-Infinity;
-    let rollDSum=0, rollDMax=-Infinity, pitchDSum=0, yawDSum=0;
-    const cnt = ei-si+1;
-    for (let j=si;j<=ei;j++) {
-      gzDSum+=gzD[j]; if(gzD[j]<gzDMin)gzDMin=gzD[j]; gzRawSum+=gzRaw[j];
-      gzStdSum+=gzStdev[j]; if(gzStdev[j]>gzStdMax)gzStdMax=gzStdev[j];
-      rollDSum+=rollD[j]; if(rollD[j]>rollDMax)rollDMax=rollD[j];
-      pitchDSum+=pitchD[j]; yawDSum+=yawD[j];
-    }
-
-    shots.push({
-      clickTime: ct, startSec: times[si], endSec: times[ei], holdSec,
-      gzDMean: gzDSum/cnt, gzDMin, gzRawMean: gzRawSum/cnt,
-      gzStdevMean: gzStdSum/cnt, gzStdevMax: gzStdMax,
-      rollDMean: rollDSum/cnt, rollDMax, pitchDMean: pitchDSum/cnt, yawDMean: yawDSum/cnt,
-      hrAtShot: interpHr(S.hr, times[si]+holdSec/2),
-    });
-  }
-
-  // Suggest params
-  const margin = 0.3;
-  const suggested = { ...getParams() };
-  suggested.gz_min_detrended = +(Math.min(...shots.map(s=>s.gzDMin)) - margin).toFixed(2);
-  suggested.gz_stdev_max = +(Math.max(...shots.map(s=>s.gzStdevMax)) + margin).toFixed(2);
-  suggested.roll_max_detrended = +(Math.max(...shots.map(s=>s.rollDMax)) + margin).toFixed(2);
-  suggested.hold_min_sec = +Math.max(Math.min(...shots.map(s=>s.holdSec)) - 1, 1).toFixed(1);
-  suggested.hold_max_sec = +(Math.max(...shots.map(s=>s.holdSec)) + 2).toFixed(1);
-
-  calResults = { shots, suggested };
-
-  // Render stats
-  let html = `<div style="color:#22C55E;font-weight:600;margin-bottom:4px">${shots.length} marked shot(s)</div>`;
-  html += '<table><thead><tr><th>#</th><th>Hold</th><th>gz_d</th><th>stdev</th><th>roll_d</th><th>pitch_d</th><th>HR</th></tr></thead><tbody>';
-  shots.forEach((s, i) => {
-    html += `<tr><td style="color:#22C55E">C${i+1}</td><td>${s.holdSec.toFixed(1)}s</td>
-      <td>${s.gzDMean.toFixed(1)}</td><td>${s.gzStdevMax.toFixed(2)}</td>
-      <td>${s.rollDMean.toFixed(2)}</td><td>${s.pitchDMean.toFixed(2)}</td>
-      <td>${s.hrAtShot ? Math.round(s.hrAtShot) : '—'}</td></tr>`;
-  });
-  html += '</tbody></table>';
-  html += `<div class="suggested">Suggested:</div>
-    <div>gz_min: ${suggested.gz_min_detrended}</div>
-    <div>stdev_max: ${suggested.gz_stdev_max}</div>
-    <div>roll_max: ${suggested.roll_max_detrended}</div>
-    <div>hold: ${suggested.hold_min_sec}–${suggested.hold_max_sec}s</div>`;
-  $('calibration-stats').innerHTML = html;
-}
-
-function applyCalibration() {
-  if (!calResults) return;
-  const p = calResults.suggested;
-  $('p-gz-min').value = p.gz_min_detrended;
-  $('p-gz-stdev').value = p.gz_stdev_max;
-  $('p-roll-max').value = p.roll_max_detrended;
-  $('p-hold-min').value = p.hold_min_sec;
-  $('p-hold-max').value = p.hold_max_sec;
+  el.innerHTML = html;
 }
 
 // ═══════════════ PROFILES ═══════════════
 function saveProfile() {
-  const name = $('profile-name').value.trim();
-  if (!name) return;
+  const name = $('profile-name').value.trim(); if (!name) return;
   const profiles = JSON.parse(localStorage.getItem('aw_profiles') || '{}');
   profiles[name] = getParams();
   localStorage.setItem('aw_profiles', JSON.stringify(profiles));
   $('profile-name').value = '';
   loadProfileList();
 }
-
 function loadProfileList() {
   const profiles = JSON.parse(localStorage.getItem('aw_profiles') || '{}');
   const sel = $('profile-select');
   sel.innerHTML = '<option value="">Default</option>';
-  Object.keys(profiles).forEach(name => {
-    sel.innerHTML += `<option value="${name}">${name}</option>`;
-  });
+  Object.keys(profiles).forEach(name => { sel.innerHTML += `<option value="${name}">${name}</option>`; });
 }
-
 function loadProfile() {
-  const name = $('profile-select').value;
-  if (!name) return;
+  const name = $('profile-select').value; if (!name) return;
   const profiles = JSON.parse(localStorage.getItem('aw_profiles') || '{}');
   const p = profiles[name]; if (!p) return;
-  $('p-gz-min').value = p.gz_min_detrended ?? 2.0;
-  $('p-gz-stdev').value = p.gz_stdev_max ?? 1.0;
-  $('p-roll-max').value = p.roll_max_detrended ?? -0.5;
+  $('p-gz-min').value = p.gz_min_detrended ?? 2.0; $('sl-gz-min').value = p.gz_min_detrended ?? 2.0;
+  $('p-gz-stdev').value = p.gz_stdev_max ?? 1.0; $('sl-gz-stdev').value = p.gz_stdev_max ?? 1.0;
+  $('p-roll-max').value = p.roll_max_detrended ?? -0.5; $('sl-roll-max').value = p.roll_max_detrended ?? -0.5;
   $('p-hold-min').value = p.hold_min_sec ?? 3.0;
   $('p-hold-max').value = p.hold_max_sec ?? 14.0;
   $('p-merge').value = p.merge_gap_sec ?? 1.0;
   $('p-cooldown').value = p.cooldown_sec ?? 2.0;
   $('p-detrend').value = p.detrend_win_sec ?? 60;
   $('p-stdev-win').value = p.stdev_win_sec ?? 2.0;
+  if (S) renderShotProfiles();
 }
 
 // ═══════════════ ACTIONS ═══════════════
 function redetect() {
   if (!S) return;
   showLoading(true);
+  setTimeout(() => { detectShots(S); render(); showLoading(false); }, 10);
+}
+function refineDetection() {
+  if (!S || !S.shots.length || !S.shotZScores) return;
+  showLoading(true);
   setTimeout(() => {
-    detectShots(S);
-    clearCalibration();
-    updateRoundSelect();
-    render();
-    showLoading(false);
+    const zScores = S.shotZScores;
+    const nonOutliers = S.shots.filter((_, i) => zScores[i] <= 2.5);
+    if (!nonOutliers.length) { showLoading(false); return; }
+    const times = S.sensor.time, n = S.n;
+    function findIdx(target) { let lo = 0, hi = n - 1; while (lo < hi) { const mid = (lo + hi) >> 1; times[mid] < target ? lo = mid + 1 : hi = mid; } return lo; }
+    const stats = { gzDMin:[], gzStdevMax:[], rollDMax:[], holds:[] };
+    for (const shot of nonOutliers) {
+      const jS = findIdx(shot.startSec), jE = Math.min(findIdx(shot.endSec) + 1, n);
+      let gzMin = Infinity, stdevMax = -Infinity, rollMax = -Infinity;
+      for (let j = jS; j < jE; j++) {
+        if (S.gzD[j] < gzMin) gzMin = S.gzD[j];
+        if (S.gzStdev && S.gzStdev[j] > stdevMax) stdevMax = S.gzStdev[j];
+        if (S.rollD && S.rollD[j] > rollMax) rollMax = S.rollD[j];
+      }
+      stats.gzDMin.push(gzMin); stats.gzStdevMax.push(stdevMax); stats.rollDMax.push(rollMax); stats.holds.push(shot.holdSec);
+    }
+    const margin = 0.3, np = getParams();
+    np.gz_min_detrended = +(Math.min(...stats.gzDMin) - margin).toFixed(2);
+    np.gz_stdev_max = +(Math.max(...stats.gzStdevMax) + margin).toFixed(2);
+    np.roll_max_detrended = +(Math.max(...stats.rollDMax) + margin).toFixed(2);
+    np.hold_min_sec = +Math.max(Math.min(...stats.holds) - 1, 0.5).toFixed(1);
+    np.hold_max_sec = +(Math.max(...stats.holds) + 2).toFixed(1);
+    setParamUI(np);
+    detectShots(S, np); render(); showLoading(false);
+  }, 10);
+}
+function autoTune() {
+  if (!S) return;
+  const expected = getExpectedShots();
+  if (expected === null || expected <= 0) { alert('Enter expected shot count'); return; }
+  showLoading(true);
+  setTimeout(() => {
+    const base = getParams(); let best = { ...base }, bestDiff = Infinity;
+    const gzMins = [0.5,1.0,1.5,2.0,2.5,3.0,3.5,4.0];
+    const gzStdevs = [0.3,0.5,0.7,1.0,1.3,1.6,2.0];
+    const rollMaxes = [-2.0,-1.5,-1.0,-0.5,0.0,0.5,1.0];
+    const holdMins = [1.0,2.0,3.0,4.0,5.0];
+    const cooldowns = [1.0,2.0,3.0,4.0];
+    for (const gm of gzMins) { for (const gs of gzStdevs) {
+      const p = { ...base, gz_min_detrended:gm, gz_stdev_max:gs }; detectShots(S, p);
+      const diff = Math.abs(S.shots.length - expected);
+      if (diff < bestDiff) { bestDiff = diff; best = { ...p }; }
+      if (diff === 0) break;
+    } if (bestDiff === 0) break; }
+    if (bestDiff > 0) { for (const rm of rollMaxes) { for (const hm of holdMins) { for (const cd of cooldowns) {
+      const p = { ...best, roll_max_detrended:rm, hold_min_sec:hm, cooldown_sec:cd }; detectShots(S, p);
+      const diff = Math.abs(S.shots.length - expected);
+      if (diff < bestDiff) { bestDiff = diff; best = { ...p }; }
+      if (diff === 0) break;
+    } if (bestDiff === 0) break; } if (bestDiff === 0) break; } }
+    setParamUI(best); detectShots(S, best); render(); showLoading(false);
   }, 10);
 }
 
-function updateRoundSelect() {
-  const sel = $('round-select');
-  sel.innerHTML = '<option value="all">All Rounds</option>';
-  S.roundAnalytics.forEach(ra => {
-    sel.innerHTML += `<option value="${ra.round}">Round ${ra.round} (${ra.shots.length} shots, ${Math.round(ra.endSec-ra.startSec)}s)</option>`;
-  });
+function setParamUI(p) {
+  $('p-gz-min').value = p.gz_min_detrended; $('sl-gz-min').value = p.gz_min_detrended;
+  $('p-gz-stdev').value = p.gz_stdev_max; $('sl-gz-stdev').value = p.gz_stdev_max;
+  $('p-roll-max').value = p.roll_max_detrended; $('sl-roll-max').value = p.roll_max_detrended;
+  $('p-hold-min').value = p.hold_min_sec;
+  $('p-hold-max').value = p.hold_max_sec;
+  $('p-cooldown').value = p.cooldown_sec;
+  if (p.ddt_max !== undefined) { $('p-ddt-max').value = p.ddt_max; $('sl-ddt-max').value = p.ddt_max; }
 }
 
 function processFile(file) {
@@ -854,11 +768,9 @@ function processFile(file) {
     setTimeout(() => {
       S = parseCSV(e.target.result);
       if (!S) { alert('Could not parse CSV'); showLoading(false); return; }
-      detectShots(S);
-      updateRoundSelect();
-      clearCalibration();
-      render();
-      showLoading(false);
+      const totalArrows = S.rounds.reduce((s,r) => s + r.arrows.filter(a => a.zone !== 'DNS').length, 0);
+      $('expected-shots').value = totalArrows > 0 ? totalArrows : '';
+      detectShots(S); render(); showLoading(false);
       $('drop-zone').textContent = file.name;
     }, 10);
   };
@@ -867,36 +779,30 @@ function processFile(file) {
 
 // ═══════════════ UTILITIES ═══════════════
 function $(id) { return document.getElementById(id); }
-function hexToRgb(hex) {
-  const h = hex.replace('#','');
-  return `${parseInt(h.substr(0,2),16)},${parseInt(h.substr(2,2),16)},${parseInt(h.substr(4,2),16)}`;
+function showLoading(show) { $('loading').classList.toggle('active', show); }
+
+// Sync sliders ↔ inputs
+function syncSlider(sliderId, inputId) {
+  $(sliderId).addEventListener('input', () => { $(inputId).value = $(sliderId).value; if (S) renderShotProfiles(); });
+  $(inputId).addEventListener('change', () => { $(sliderId).value = $(inputId).value; if (S) renderShotProfiles(); });
 }
-function showLoading(show) {
-  $('loading').classList.toggle('active', show);
-}
+syncSlider('sl-gz-min', 'p-gz-min');
+syncSlider('sl-gz-ddt-min', 'p-gz-ddt-min');
+syncSlider('sl-gz-ddt-max', 'p-gz-ddt-max');
 
 // ═══════════════ EVENT LISTENERS ═══════════════
-$('file-input').addEventListener('change', (e) => {
-  if (e.target.files[0]) processFile(e.target.files[0]);
-});
-
-// Drag and drop
+$('file-input').addEventListener('change', (e) => { if (e.target.files[0]) processFile(e.target.files[0]); });
 const dz = $('drop-zone');
 dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
 dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
-dz.addEventListener('drop', (e) => {
-  e.preventDefault(); dz.classList.remove('dragover');
-  if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('dragover'); if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
+$('smooth-slider').addEventListener('input', () => {
+  const v = +$('smooth-slider').value;
+  $('smooth-val').textContent = v <= 1 ? 'Off' : v;
+  if (S) renderMainCharts();
 });
-
-// Round filter / detrended toggle
-$('round-select').addEventListener('change', () => { if(S) renderCharts(); });
-$('show-detrended').addEventListener('change', () => { if(S) renderCharts(); });
-
-// Profile select
+$('expected-shots').addEventListener('input', () => { if(S) updateShotGuidance(); });
 $('profile-select').addEventListener('change', loadProfile);
-
-// Init
 loadProfileList();
 </script>
 </body>
