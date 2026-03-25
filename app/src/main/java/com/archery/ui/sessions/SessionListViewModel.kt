@@ -63,18 +63,6 @@ class SessionListViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch { repo.deleteSession(id) }
     }
 
-    fun createManualSession(
-        dateMs: Long,
-        displayName: String?,
-        roundCount: Int,
-        arrowsPerRound: Int,
-        roundScores: List<Float>,
-    ) {
-        viewModelScope.launch(Dispatchers.IO) {
-            repo.createManualSession(dateMs, displayName, roundCount, arrowsPerRound, roundScores)
-        }
-    }
-
     fun startSession() = sender.sendStartSession()
 
     fun endSession() = sender.sendEndSession()

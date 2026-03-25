@@ -28,12 +28,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +58,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.archery.shared.RoundSummary
 import com.archery.shared.ScoreZone
 import androidx.compose.ui.platform.LocalConfiguration
+import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 // ═══════════════ COLORS ═══════════════
@@ -117,12 +123,40 @@ fun SessionDetailScreen(
     LaunchedEffect(sessionId) { vm.load(sessionId) }
 
     val session by vm.session.collectAsState()
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showRenameDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog   by remember { mutableStateOf(false) }
+    var showRenameDialog   by remember { mutableStateOf(false) }
+    var showDatePicker     by remember { mutableStateOf(false) }
     var renameText by remember(session?.displayName) { mutableStateOf(session?.displayName ?: "") }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy  h:mm a")
+
+    // Date picker — initialise from the current session date each time dialog opens
+    val currentDateMs = remember(session?.date) {
+        session?.date?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+            ?: System.currentTimeMillis()
+    }
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = currentDateMs)
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton    = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { utcMs ->
+                        val picked = Instant.ofEpochMilli(utcMs).atZone(ZoneId.of("UTC")).toLocalDate()
+                        val epochMs = picked.atTime(LocalTime.NOON)
+                            .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        vm.updateDate(epochMs)
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 
     // Analytics are loaded + cached by the ViewModel (AnalyticsCache) — instant on revisit.
     val sessionAnalytics by vm.analytics.collectAsState()
@@ -197,7 +231,14 @@ fun SessionDetailScreen(
                             .padding(4.dp))
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(session?.date?.format(formatter) ?: "", fontSize = 14.sp, color = ATextSlate300)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.clickable { showDatePicker = true },
+                ) {
+                    Text(session?.date?.format(formatter) ?: "", fontSize = 14.sp, color = ATextSlate300)
+                    Text("✏", fontSize = 12.sp, color = ATextSlate300.copy(alpha = 0.6f))
+                }
             }
         }
 

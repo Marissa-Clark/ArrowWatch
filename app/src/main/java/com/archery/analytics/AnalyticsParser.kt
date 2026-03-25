@@ -40,6 +40,8 @@ data class DetectedShot(
     val gzDWindow: List<Float> = emptyList(),
     /** Rate of change of detrended gz (central-difference derivative) during the hold window. */
     val gzDdtWindow: List<Float> = emptyList(),
+    /** True when this shot was manually flagged by the user, not detected automatically. */
+    val isManual: Boolean = false,
 )
 
 /**
@@ -175,6 +177,68 @@ fun saveManualShots(csvPath: String, manual: Map<Int, List<Float>>) {
     } catch (e: Exception) {
         Log.e(DISMISSED_TAG, "Failed to save manual shots", e)
     }
+}
+
+// ═══════════════ MANUAL SHOT SYNTHESIS ═══════════════
+
+/**
+ * Synthesises a [DetectedShot] from raw sensor data at [timeSec].
+ *
+ * Walks outward from the nearest sample to [timeSec] while `gz ≥ [gzFloor]` (very permissive
+ * compared to the normal detector threshold), bounded by ±[maxRadiusSec].  Returns null only
+ * when there are no samples anywhere near [timeSec].
+ */
+fun synthesizeShotAt(
+    timeSec: Float,
+    sensorData: List<SensorSample>,
+    gzFloor: Float = 4.0f,
+    maxRadiusSec: Float = 4f,
+): DetectedShot? {
+    if (sensorData.isEmpty()) return null
+
+    // Find the index of the sample closest to the requested time
+    val centerIdx = sensorData.indices.minByOrNull { kotlin.math.abs(sensorData[it].time - timeSec) } ?: return null
+
+    // Expand left while gz stays above floor and within radius
+    var lo = centerIdx
+    while (lo > 0
+        && sensorData[lo - 1].gz >= gzFloor
+        && sensorData[lo - 1].time >= timeSec - maxRadiusSec) lo--
+
+    // Expand right
+    var hi = centerIdx
+    while (hi < sensorData.size - 1
+        && sensorData[hi + 1].gz >= gzFloor
+        && sensorData[hi + 1].time <= timeSec + maxRadiusSec) hi++
+
+    // If center itself is below floor (very marginal shot), use a fixed ±0.5s window anyway
+    val window = if (sensorData[centerIdx].gz < gzFloor) {
+        sensorData.filter { it.time in (timeSec - 0.5f)..(timeSec + 0.5f) }
+    } else {
+        sensorData.subList(lo, hi + 1)
+    }
+    if (window.isEmpty()) return null
+
+    val startSec = window.first().time
+    val endSec   = window.last().time
+    val holdSec  = (endSec - startSec).coerceAtLeast(0.1f)
+    val midTime  = (startSec + endSec) / 2f
+    val gzVals   = window.map { it.gz }
+    val gzMean   = gzVals.average().toFloat()
+    val variance = if (gzVals.size > 1)
+        gzVals.map { (it - gzMean) * (it - gzMean) }.average().toFloat() else 0f
+
+    return DetectedShot(
+        time         = midTime,
+        startSec     = startSec,
+        endSec       = endSec,
+        holdSec      = holdSec,
+        nSamples     = window.size,
+        gzMean       = gzMean,
+        gzStdev      = kotlin.math.sqrt(variance.toDouble()).toFloat(),
+        sensorWindow = window,
+        isManual     = true,
+    )
 }
 
 // ═══════════════ PARSER + SHOT DETECTION ═══════════════
