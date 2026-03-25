@@ -90,7 +90,7 @@ class WatchListenerService : WearableListenerService() {
                 val hrB64       = p.optString(WearPaths.KEY_HR_DATA, "")
                 if (round > 0 && sensorB64.isNotEmpty()) {
                     scope.launch {
-                        val shots = AnalyticsParser.detectShots(
+                        val result = AnalyticsParser.detectShots(
                             sensor           = decodeSensorBytes(
                                 android.util.Base64.decode(sensorB64, android.util.Base64.NO_WRAP)),
                             walkingIntervals = emptyList(),
@@ -98,8 +98,8 @@ class WatchListenerService : WearableListenerService() {
                                 android.util.Base64.decode(hrB64.ifEmpty { "" },
                                     android.util.Base64.NO_WRAP)),
                         )
-                        Log.i(TAG, "Round $round: detected ${shots.size} shots from live sensor data")
-                        LiveSessionRepository.onRoundAnalytics(round, shots)
+                        Log.i(TAG, "Round $round: detected ${result.shots.size} shots from live sensor data")
+                        LiveSessionRepository.onRoundAnalytics(round, result.shots)
                     }
                 }
             }

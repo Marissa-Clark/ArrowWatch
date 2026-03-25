@@ -20,4 +20,6 @@ data class SessionEntity(
     val displayName: String? = null,
     /** Soft-delete flag: true means deleted but kept in DB so CSV re-import is suppressed. */
     val isDeleted: Boolean = false,
+    /** When true, the user has confirmed detection is correct — suppress re-run prompts. */
+    val analyticsLocked: Boolean = false,
 )
