@@ -65,7 +65,6 @@ class MainActivity : ComponentActivity() {
             val phase by viewModel.phase.collectAsState()
             val session by viewModel.session.collectAsState()
             val arrowsPerRound by viewModel.arrowsPerRound.collectAsState()
-            val showQuickScore by viewModel.showQuickScore.collectAsState()
             val previousRoundInfo by viewModel.previousRoundInfo.collectAsState()
             val heartRate by sensorMgr.heartRate.collectAsState()
 
@@ -96,6 +95,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val walkingSteps by viewModel.walkingSteps.collectAsState()
             val isApprox = session?.isScoreApprox ?: false
 
             ArcheryTheme {
@@ -113,11 +113,8 @@ class MainActivity : ComponentActivity() {
                         previousRoundInfo = previousRoundInfo,
                         totalScore = session?.totalScore ?: 0f,
                         avgPerArrow = session?.avgPerArrow ?: 0f,
+                        walkingSteps = walkingSteps,
                         isApprox = isApprox,
-                        showQuickScore = showQuickScore,
-                        onQuickScore = viewModel::quickScore,
-                        onDismissQuickScore = viewModel::dismissQuickScore,
-                        onManualShot = viewModel::manualShot,
                         onEnterScoring = viewModel::enterScoring,
                         onEndSession = viewModel::endSession,
                     )
