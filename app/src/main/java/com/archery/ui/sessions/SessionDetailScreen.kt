@@ -265,24 +265,8 @@ fun SessionDetailScreen(
             var showInsertDialog by remember { mutableStateOf(false) }
             var editingRound by remember { mutableStateOf<Int?>(null) }
 
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Round Details", fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
-                    color = ATextPrimary)
-                CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(6.dp)).background(ACyan600)
-                            .clickable { showInsertDialog = true }
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    ) {
-                        Text("+ Round", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                            color = Color.White)
-                    }
-                }
-            }
+            Text("Round Details", fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+                color = ATextPrimary)
             Spacer(Modifier.height(12.dp))
 
             RoundDetailsTable(
@@ -301,6 +285,17 @@ fun SessionDetailScreen(
                     vm.deleteRound(roundNumber)
                 },
             )
+            Spacer(Modifier.height(8.dp))
+            CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+                Box(
+                    Modifier.clip(RoundedCornerShape(6.dp)).background(ACyan600)
+                        .clickable { showInsertDialog = true }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text("+ Round", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White)
+                }
+            }
             Spacer(Modifier.height(20.dp))
 
             // ── Zone Distribution (shown AFTER round details) ──

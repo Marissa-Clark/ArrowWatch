@@ -36,6 +36,32 @@ data class DetectedShot(
     val hrAtShot: Float? = null,
     /** Raw sensor samples captured during the hold window (startSec..endSec). */
     val sensorWindow: List<SensorSample> = emptyList(),
+    /** Detrended gz (gz minus rolling mean) during the hold window. */
+    val gzDWindow: List<Float> = emptyList(),
+    /** Rate of change of detrended gz (central-difference derivative) during the hold window. */
+    val gzDdtWindow: List<Float> = emptyList(),
+)
+
+/**
+ * A window that passed the gz_ddt band + gzD threshold but was too short to qualify.
+ * Represents a likely shot attempt that didn't meet [holdNeeded].
+ */
+data class NearMissShot(
+    val startSec: Float,
+    val endSec: Float,
+    /** Actual duration — always < [holdNeeded]. */
+    val holdSec: Float,
+    /** Profile holdMinSec baked in so the UI can show the gap without re-passing the profile. */
+    val holdNeeded: Float,
+    val gzDMean: Float,
+    val sensorWindow: List<SensorSample> = emptyList(),
+    val gzDWindow: List<Float> = emptyList(),
+)
+
+/** Combined return value from [AnalyticsParser.detectShots]. */
+data class DetectionResult(
+    val shots: List<DetectedShot>,
+    val nearMisses: List<NearMissShot>,
 )
 
 data class RoundAnalytics(
@@ -49,6 +75,7 @@ data class RoundAnalytics(
     val avgHr: Float,
     val hrSamples: List<HrPoint>,
     val origCsvRound: Int = 0,
+    val nearMisses: List<NearMissShot> = emptyList(),
 )
 
 data class SessionAnalytics(
@@ -109,6 +136,47 @@ fun saveDismissedShots(sessionCsvPath: String, dismissed: Map<Int, Set<Int>>) {
     }
 }
 
+// ═══════════════ MANUAL SHOTS PERSISTENCE ═══════════════
+
+private fun manualShotsFilePath(csvPath: String) =
+    csvPath.removeSuffix(".csv") + ".manual.json"
+
+fun loadManualShots(csvPath: String): MutableMap<Int, MutableList<Float>> {
+    val result = mutableMapOf<Int, MutableList<Float>>()
+    if (csvPath.isEmpty()) return result
+    try {
+        val file = File(manualShotsFilePath(csvPath))
+        if (!file.exists()) return result
+        val json = JSONArray(file.readText())
+        for (i in 0 until json.length()) {
+            val obj = json.getJSONObject(i)
+            val round = obj.getInt("round")
+            val timeSec = obj.getDouble("timeSec").toFloat()
+            result.getOrPut(round) { mutableListOf() }.add(timeSec)
+        }
+    } catch (e: Exception) {
+        Log.e(DISMISSED_TAG, "Failed to load manual shots", e)
+    }
+    return result
+}
+
+fun saveManualShots(csvPath: String, manual: Map<Int, List<Float>>) {
+    if (csvPath.isEmpty()) return
+    try {
+        val arr = JSONArray()
+        manual.forEach { (round, times) ->
+            times.sorted().forEach { t ->
+                arr.put(JSONObject().apply { put("round", round); put("timeSec", t.toDouble()) })
+            }
+        }
+        val file = File(manualShotsFilePath(csvPath))
+        file.parentFile?.mkdirs()
+        file.writeText(arr.toString(2))
+    } catch (e: Exception) {
+        Log.e(DISMISSED_TAG, "Failed to save manual shots", e)
+    }
+}
+
 // ═══════════════ PARSER + SHOT DETECTION ═══════════════
 
 private data class RoundWindow(
@@ -122,27 +190,27 @@ private data class RoundWindow(
 object AnalyticsParser {
 
     // ── Threshold detector constants ──────────────────────────────────────────
-    // All thresholds apply to DETRENDED signals (60-s rolling-median subtracted).
-    private const val DETREND_WIN_SEC    = 60f    // rolling-median window for detrending
-    private const val GZ_MIN_DETRENDED  =  2.0f  // detrended gz must be >= this
-    private const val GZ_STDEV_MAX      =  1.0f  // 2-s rolling stdev of gz_d <= this
-    private const val ROLL_MAX_DETRENDED = -0.5f  // detrended roll must be <= this
-    private const val STDEV_WIN_SEC      =  2.0f  // window for rolling stdev
-    private const val HOLD_MIN_SEC       =  3.0f  // minimum hold duration (s)
-    private const val HOLD_MAX_SEC       = 14.0f  // maximum hold duration (s)
-    private const val MERGE_GAP_SEC      =  1.0f  // merge segments within this gap (s)
-    private const val COOLDOWN_SEC       =  2.0f  // minimum gap between shots (s)
+    // Detection: gz_ddt (rate-of-change of detrended gz) within a band AND
+    // gz_detrended >= GZ_MIN_DETRENDED for at least HOLD_MIN_SEC continuously.
+    private const val DETREND_WIN_SEC   = 60f    // rolling-mean window for detrending
+    private const val GZ_MIN_DETRENDED = 0f     // detrended gz must be >= this (arm raised)
+    private const val GZ_DDT_MIN       = -5f    // gz_ddt lower bound (widen to disable)
+    private const val GZ_DDT_MAX       =  5f    // gz_ddt upper bound (widen to disable)
+    private const val HOLD_MIN_SEC     =  3.0f  // minimum hold duration (s)
+    private const val HOLD_MAX_SEC     = 14.0f  // maximum hold duration (s)
+    private const val MERGE_GAP_SEC    =  1.0f  // merge segments within this gap (s)
+    private const val COOLDOWN_SEC     =  2.0f  // minimum gap between shots (s)
 
     // Used only by findShootingGap for round splitting
     private const val SPLIT_GZ_LOW = 5.0f
 
-    fun parse(filePath: String): SessionAnalytics? {
+    fun parse(filePath: String, profile: DetectionProfile = DEFAULT_PROFILE): SessionAnalytics? {
         val file = File(filePath)
         if (!file.exists()) return null
-        return parse(file)
+        return parse(file, profile)
     }
 
-    fun parse(file: File): SessionAnalytics? {
+    fun parse(file: File, profile: DetectionProfile = DEFAULT_PROFILE): SessionAnalytics? {
         if (!file.exists()) return null
         try {
             val lines = file.readLines()
@@ -194,6 +262,12 @@ object AnalyticsParser {
                         if (!roundScores.containsKey(round))     roundScores[round]     = score
                         if (!roundScoreTimes.containsKey(round)) roundScoreTimes[round] = elapsed
                     }
+                    // "scoring" is logged when walking detection triggers the scoring screen.
+                    // Use as round-end fallback if no approx_score follows (e.g. session without scoring).
+                    "scoring" -> {
+                        val round = cols.getOrNull(2)?.toIntOrNull() ?: continue
+                        if (!roundScoreTimes.containsKey(round)) roundScoreTimes[round] = elapsed
+                    }
                     "final_score", "quick_score" -> {
                         val round = cols.getOrNull(2)?.toIntOrNull() ?: continue
                         roundScoreTimes[round] = elapsed
@@ -233,7 +307,9 @@ object AnalyticsParser {
                 cleanWalkingIntervals(walkStarts, walkStops, durationSec)
             }
 
-            val allShots = detectShots(sensorSamples, hrSamples = hrSamples)
+            val detection = detectShots(sensorSamples, hrSamples = hrSamples, profile = profile)
+            val allShots  = detection.shots
+            val allNearMisses = detection.nearMisses
 
             val sortedRounds = roundScoreTimes.keys
                 .filter { it !in deletedRounds }
@@ -259,7 +335,8 @@ object AnalyticsParser {
                 val roundWalking = cleanWalking
                     .filter { (ws, we) -> we >= rw.start && ws <= rw.end }
                     .map { (ws, we) -> maxOf(ws, rw.start) to minOf(we, rw.end) }
-                val roundShots   = allShots.filter { it.time in rw.start..rw.end }
+                val roundShots     = allShots.filter { it.time in rw.start..rw.end }
+                val roundNearMisses = allNearMisses.filter { it.startSec >= rw.start && it.endSec <= rw.end }
 
                 // HR: average only at detected shot times, not the whole round
                 val avgHr = roundShots
@@ -279,6 +356,7 @@ object AnalyticsParser {
                     avgHr            = avgHr,
                     hrSamples        = roundHr,
                     origCsvRound     = rw.origCsvRound,
+                    nearMisses       = roundNearMisses,
                 )
             }
 
@@ -339,75 +417,56 @@ object AnalyticsParser {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Shot detection — threshold on detrended gz + roll
+    // Shot detection — gz_ddt band filter on detrended gz
     // ─────────────────────────────────────────────────────────────────────────
 
     fun detectShots(
         sensor: List<SensorSample>,
         walkingIntervals: List<Pair<Float, Float>> = emptyList(),
         hrSamples: List<HrPoint> = emptyList(),
-    ): List<DetectedShot> {
-        if (sensor.size < 3) return emptyList()
+        profile: DetectionProfile = DEFAULT_PROFILE,
+    ): DetectionResult {
+        if (sensor.size < 3) return DetectionResult(emptyList(), emptyList())
 
         val n = sensor.size
         val halfDetrend = DETREND_WIN_SEC / 2f
-        val halfStdev   = STDEV_WIN_SEC   / 2f
 
-        // Reusable scratch buffer for sorting (avoids per-call allocation).
-        val buf = FloatArray(n)
-
-        // ── 1. Detrend gz and roll via 60-s centred rolling median ───────────
-        // Two-pointer sliding window: both lo and hi only advance forward
-        // (sensor times are monotonically non-decreasing), so total pointer
-        // work is O(n) amortised instead of the O(n²) full-scan approach.
-        val gzD   = FloatArray(n)
-        val rollD = FloatArray(n)
+        // ── 1. Detrend gz via centred rolling mean (prefix sum, O(n)) ────────
+        val gzD = FloatArray(n)
+        val gzPrefix = DoubleArray(n + 1)
+        for (i in 0 until n) gzPrefix[i + 1] = gzPrefix[i] + sensor[i].gz
         var lo = 0; var hi = 0
         for (i in 0 until n) {
-            val t     = sensor[i].time
-            val winLo = t - halfDetrend
-            val winHi = t + halfDetrend
-            while (lo < n && sensor[lo].time  <  winLo) lo++
-            while (hi < n - 1 && sensor[hi + 1].time <= winHi) hi++
+            val t = sensor[i].time
+            while (lo < n && sensor[lo].time < t - halfDetrend) lo++
+            while (hi < n - 1 && sensor[hi + 1].time <= t + halfDetrend) hi++
             val winSize = (hi - lo + 1).coerceAtLeast(1)
-            // gz median
-            for (j in lo..hi) buf[j - lo] = sensor[j].gz
-            java.util.Arrays.sort(buf, 0, winSize)
-            val gzMed = if (winSize % 2 == 0) (buf[winSize / 2 - 1] + buf[winSize / 2]) / 2f
-                        else buf[winSize / 2]
-            // roll median (reuse buf)
-            for (j in lo..hi) buf[j - lo] = sensor[j].roll
-            java.util.Arrays.sort(buf, 0, winSize)
-            val rollMed = if (winSize % 2 == 0) (buf[winSize / 2 - 1] + buf[winSize / 2]) / 2f
-                          else buf[winSize / 2]
-            gzD[i]   = sensor[i].gz   - gzMed
-            rollD[i] = sensor[i].roll - rollMed
+            val mean = ((gzPrefix[hi + 1] - gzPrefix[lo]) / winSize).toFloat()
+            gzD[i] = sensor[i].gz - mean
         }
 
-        // ── 2. Rolling stdev of detrended gz (centred, STDEV_WIN_SEC) ────────
-        val gzStdevArr = FloatArray(n)
-        lo = 0; hi = 0
-        for (i in 0 until n) {
-            val t     = sensor[i].time
-            val winLo = t - halfStdev
-            val winHi = t + halfStdev
-            while (lo < n && sensor[lo].time  <  winLo) lo++
-            while (hi < n - 1 && sensor[hi + 1].time <= winHi) hi++
-            val winSize = hi - lo + 1
-            if (winSize < 2) { gzStdevArr[i] = 0f; continue }
-            var sum = 0.0
-            for (j in lo..hi) sum += gzD[j]
-            val mean = sum / winSize
-            var sumSq = 0.0
-            for (j in lo..hi) { val d = gzD[j] - mean; sumSq += d * d }
-            gzStdevArr[i] = sqrt(sumSq / winSize).toFloat()
+        // ── 2. gz_ddt via central difference (DSTEP = 3 samples) ─────────────
+        val DSTEP = 3
+        val gzDdt = FloatArray(n)
+        for (i in DSTEP until n - DSTEP) {
+            val dt = sensor[i + DSTEP].time - sensor[i - DSTEP].time
+            if (dt > 0.001f) gzDdt[i] = (gzD[i + DSTEP] - gzD[i - DSTEP]) / dt
         }
+        for (i in 0 until DSTEP) gzDdt[i] = gzDdt[DSTEP]
+        for (i in n - DSTEP until n) gzDdt[i] = gzDdt[n - DSTEP - 1]
 
-        // ── 3. Boolean mask ───────────────────────────────────────────────────
+        // ── 3. Boolean mask: gz_ddt in band AND gzD >= min AND optional yaw/pitch/roll bounds ──
         val mask = BooleanArray(n) { i ->
-            gzD[i]        >= GZ_MIN_DETRENDED &&
-            gzStdevArr[i] <= GZ_STDEV_MAX     &&
-            rollD[i]      <= ROLL_MAX_DETRENDED
+            val s = sensor[i]
+            gzDdt[i] >= profile.gzDdtMin        &&
+            gzDdt[i] <= profile.gzDdtMax        &&
+            gzD[i]   >= profile.gzMinDetrended  &&
+            (profile.yawMin   == null || s.yaw   >= profile.yawMin)   &&
+            (profile.yawMax   == null || s.yaw   <= profile.yawMax)   &&
+            (profile.pitchMin == null || s.pitch >= profile.pitchMin) &&
+            (profile.pitchMax == null || s.pitch <= profile.pitchMax) &&
+            (profile.rollMin  == null || s.roll  >= profile.rollMin)  &&
+            (profile.rollMax  == null || s.roll  <= profile.rollMax)
         }
 
         // ── 4. Find contiguous True segments ─────────────────────────────────
@@ -426,7 +485,7 @@ object AnalyticsParser {
             }
         }
         if (segStart != null) segs.add(Seg(segStart, n - 1))
-        if (segs.isEmpty()) return emptyList()
+        if (segs.isEmpty()) return DetectionResult(emptyList(), emptyList())
 
         // ── 5. Merge segments within MERGE_GAP_SEC ────────────────────────────
         val merged = mutableListOf(segs[0])
@@ -439,10 +498,17 @@ object AnalyticsParser {
         }
 
         // ── 6. Filter by duration + cooldown, build DetectedShot list ─────────
-        val shots = mutableListOf<DetectedShot>()
-        var lastExit = -999f
+        val shots     = mutableListOf<DetectedShot>()
+        val nearMisses = mutableListOf<NearMissShot>()
+        var lastExit  = -999f
         for (seg in merged) {
-            if (seg.hold < HOLD_MIN_SEC || seg.hold > HOLD_MAX_SEC) continue
+            if (walkingIntervals.any { (ws, we) -> seg.tStart < we && seg.tEnd > ws }) continue
+
+            if (seg.hold < profile.holdMinSec || seg.hold > HOLD_MAX_SEC) {
+                // Near-miss detection disabled for now (hold duration not the main issue)
+                // if (seg.hold >= 1.0f && seg.hold < profile.holdMinSec) { ... }
+                continue
+            }
             if (seg.tStart - lastExit < COOLDOWN_SEC) continue
 
             val gzVals  = (seg.s..seg.e).map { sensor[it].gz }
@@ -466,18 +532,12 @@ object AnalyticsParser {
                 gzStdev      = gzStdev,
                 hrAtShot     = hrAtShot,
                 sensorWindow = window,
+                gzDWindow    = gzD.slice(seg.s..seg.e),
+                gzDdtWindow  = gzDdt.slice(seg.s..seg.e),
             ))
             lastExit = seg.tEnd
         }
-        return shots
-    }
-
-    private fun median(values: List<Float>): Float {
-        if (values.isEmpty()) return 0f
-        val sorted = values.sorted()
-        val mid = sorted.size / 2
-        return if (sorted.size % 2 == 0) (sorted[mid - 1] + sorted[mid]) / 2f
-        else sorted[mid]
+        return DetectionResult(shots, nearMisses)
     }
 
     private fun interpolateHr(hrSamples: List<HrPoint>, t: Float): Float? {

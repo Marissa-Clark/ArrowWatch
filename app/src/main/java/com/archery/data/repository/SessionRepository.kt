@@ -137,6 +137,9 @@ class SessionRepository(db: ArcheryDatabase) {
     suspend fun deleteRound(sessionId: Long, roundNumber: Int) =
         dao.deleteRound(sessionId, roundNumber)
 
+    suspend fun lockAnalytics(sessionId: Long, locked: Boolean) =
+        dao.setAnalyticsLocked(sessionId, locked)
+
     suspend fun updateRoundHoldMs(sessionId: Long, roundNumber: Int, holdMs: Long) =
         dao.updateRoundHoldMs(sessionId, roundNumber, holdMs)
 
@@ -150,6 +153,42 @@ class SessionRepository(db: ArcheryDatabase) {
                 detectedScore = 0f,
             )
         )
+    }
+
+    /**
+     * Creates a manual (retrospective) session with [roundCount] empty rounds.
+     * [roundScores] may be shorter than [roundCount]; missing slots default to 0.
+     * Returns the new session ID.
+     */
+    suspend fun createManualSession(
+        dateMs: Long,
+        displayName: String?,
+        roundCount: Int,
+        arrowsPerRound: Int,
+        roundScores: List<Float>,
+    ): Long {
+        val sessionId = dao.insertSession(
+            SessionEntity(
+                fileName    = "manual_$dateMs",
+                filePath    = "",
+                dateMs      = dateMs,
+                durationSec = 0L,
+                displayName = displayName?.takeIf { it.isNotBlank() },
+            )
+        )
+        repeat(roundCount) { idx ->
+            val roundNum = idx + 1
+            val score = roundScores.getOrNull(idx)?.takeIf { it > 0f }
+            dao.insertRound(
+                RoundEntity(
+                    sessionId      = sessionId,
+                    roundNumber    = roundNum,
+                    detectedScore  = score ?: 0f,
+                    confirmedScore = score,
+                )
+            )
+        }
+        return sessionId
     }
 
     // ── Mapping ──────────────────────────────────────────────────────────────
@@ -176,6 +215,7 @@ class SessionRepository(db: ArcheryDatabase) {
             avgHoldMs = allHold.takeIf { it.isNotEmpty() }?.average()?.toLong(),
             isArchived = session.isArchived,
             displayName = session.displayName,
+            analyticsLocked = session.analyticsLocked,
         )
     }
 

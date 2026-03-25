@@ -5,9 +5,16 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.archery.analytics.AnalyticsCache
 import com.archery.analytics.AnalyticsParser
+import com.archery.analytics.DetectedShot
+import com.archery.analytics.DetectionProfile
+import com.archery.analytics.DetectionSettings
+import com.archery.analytics.ProfileSuggestion
 import com.archery.analytics.SessionAnalytics
 import com.archery.analytics.loadDismissedShots
+import com.archery.analytics.loadManualShots
 import com.archery.analytics.saveDismissedShots
+import com.archery.analytics.saveManualShots
+import com.archery.analytics.SensorSample
 import com.archery.data.db.ArcheryDatabase
 import com.archery.data.repository.SessionRepository
 import com.archery.shared.ScoreZone
@@ -19,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -47,7 +55,75 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
     private val _dismissedState = MutableStateFlow<MutableMap<Int, MutableSet<Int>>>(mutableMapOf())
     val dismissedState: StateFlow<MutableMap<Int, MutableSet<Int>>> = _dismissedState.asStateFlow()
 
+    // Manual (flagged) shots: map of csvRound → list of timeSec offsets relative to round start
+    private val _manualShots = MutableStateFlow<MutableMap<Int, MutableList<Float>>>(mutableMapOf())
+    val manualShots: StateFlow<MutableMap<Int, MutableList<Float>>> = _manualShots.asStateFlow()
+
+    // ── Detection settings (single global threshold set) ─────────────────────
+
+    /** The currently active detection thresholds — mirrors DetectionSettings.active. */
+    val activeProfile: StateFlow<DetectionProfile> = DetectionSettings.active
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DetectionSettings.active.value)
+
+    /**
+     * Apply a dismissal suggestion: update global settings, clear cache, re-run analytics.
+     * The suggestion may also be applied from the Detection Settings screen directly.
+     */
+    fun applySuggestion(s: ProfileSuggestion) {
+        DetectionSettings.update(s.suggested)
+        AnalyticsCache.clear()
+        refreshAnalytics()
+    }
+
+    /** Suggested tighter thresholds derived from dismissed vs. kept shots. Null if none or no useful change. */
+    val suggestion: StateFlow<ProfileSuggestion?> = combine(
+        _analytics, _dismissedState, DetectionSettings.active,
+    ) { a, dismissed, profile -> computeSuggestion(a, dismissed, profile) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private fun computeSuggestion(
+        analytics: SessionAnalytics?,
+        dismissed: Map<Int, Set<Int>>,
+        profile: DetectionProfile,
+    ): ProfileSuggestion? {
+        if (analytics == null) return null
+        val dismissedShots = analytics.roundAnalytics.flatMap { ra ->
+            val d = dismissed[ra.origCsvRound] ?: emptySet()
+            ra.detectedShots.filterIndexed { i, _ -> i in d }
+        }
+        if (dismissedShots.isEmpty()) return null
+        val keptShots = analytics.roundAnalytics.flatMap { ra ->
+            val d = dismissed[ra.origCsvRound] ?: emptySet()
+            ra.detectedShots.filterIndexed { i, _ -> i !in d }
+        }
+
+        // Characteristic gzD value per shot = mean of its gzDWindow
+        fun shotGzD(s: DetectedShot) =
+            if (s.gzDWindow.isNotEmpty()) s.gzDWindow.average().toFloat() else 0f
+
+        // Round up to nearest 0.5
+        fun ceilHalf(v: Float) = (kotlin.math.ceil(v.toDouble() * 2.0) / 2.0).toFloat()
+
+        val maxDismissedHold = dismissedShots.maxOf { it.holdSec }
+        val suggestedHold    = maxOf(profile.holdMinSec, ceilHalf(maxDismissedHold + 0.01f))
+
+        val maxDismissedGzD = dismissedShots.maxOf { shotGzD(it) }
+        val suggestedGzD    = maxOf(profile.gzMinDetrended, ceilHalf(maxDismissedGzD + 0.01f))
+
+        if (suggestedHold == profile.holdMinSec && suggestedGzD == profile.gzMinDetrended) return null
+
+        return ProfileSuggestion(
+            suggested      = profile.copy(name = "Tuned", holdMinSec = suggestedHold, gzMinDetrended = suggestedGzD),
+            dismissedCount = dismissedShots.size,
+            holdChanged    = suggestedHold != profile.holdMinSec,
+            gzChanged      = suggestedGzD  != profile.gzMinDetrended,
+            holdConflicts  = keptShots.count { it.holdSec < suggestedHold },
+            gzConflicts    = keptShots.count { shotGzD(it) < suggestedGzD },
+        )
+    }
+
     init {
+        DetectionSettings.init(getApplication())
         // Collect session; when the filePath first becomes non-empty (or changes), load
         // analytics from the process-lifetime cache (instant) or parse from disk.
         // All subsequent DB emissions with the same path are ignored.
@@ -65,7 +141,7 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
                 } else {
                     _analytics.value = null
                     _isAnalyticsLoading.value = true
-                    val parsed = withContext(Dispatchers.IO) { AnalyticsParser.parse(path) }
+                    val parsed = withContext(Dispatchers.IO) { AnalyticsParser.parse(path, DetectionSettings.active.value) }
                     if (parsed != null) {
                         AnalyticsCache.put(path, parsed)
                         // Persist analytics-derived hold times so home screen can display them.
@@ -86,18 +162,25 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
                     _isAnalyticsLoading.value = false
                 }
                 _dismissedState.value = withContext(Dispatchers.IO) { loadDismissedShots(path) }
+                _manualShots.value = withContext(Dispatchers.IO) { loadManualShots(path) }
             }
         }
     }
 
-    /** Re-parses the CSV from disk, replacing the cached result. */
+    fun lockAnalytics(locked: Boolean) {
+        val id = _sessionId.value.takeIf { it >= 0 } ?: return
+        viewModelScope.launch { repo.lockAnalytics(id, locked) }
+    }
+
+    /** Re-parses the CSV from disk with the current global detection settings. Ignored when locked. */
     fun refreshAnalytics() {
+        if (session.value?.analyticsLocked == true) return
         val path = session.value?.filePath?.takeIf { it.isNotEmpty() } ?: return
         AnalyticsCache.invalidate(path)
         viewModelScope.launch {
             _analytics.value = null
             _isAnalyticsLoading.value = true
-            val parsed = withContext(Dispatchers.IO) { AnalyticsParser.parse(path) }
+            val parsed = withContext(Dispatchers.IO) { AnalyticsParser.parse(path, DetectionSettings.active.value) }
             if (parsed != null) AnalyticsCache.put(path, parsed)
             _analytics.value = parsed
             _isAnalyticsLoading.value = false
@@ -108,10 +191,11 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         val updated = _dismissedState.value.toMutableMap()
         updated[roundNumber] = (updated[roundNumber]?.toMutableSet() ?: mutableSetOf()).also { it.add(shotIndex) }
         _dismissedState.value = updated
-        // NonCancellable ensures the file write completes even if the user presses back
-        // before the coroutine has a chance to run.
         viewModelScope.launch(Dispatchers.IO) {
-            withContext(NonCancellable) { saveDismissedShots(filePath, updated) }
+            withContext(NonCancellable) {
+                saveDismissedShots(filePath, updated)
+                syncHoldTimeForRound(roundNumber, updated)
+            }
         }
     }
 
@@ -120,8 +204,46 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         updated[roundNumber] = (updated[roundNumber]?.toMutableSet() ?: mutableSetOf()).also { it.remove(shotIndex) }
         _dismissedState.value = updated
         viewModelScope.launch(Dispatchers.IO) {
-            withContext(NonCancellable) { saveDismissedShots(filePath, updated) }
+            withContext(NonCancellable) {
+                saveDismissedShots(filePath, updated)
+                syncHoldTimeForRound(roundNumber, updated)
+            }
         }
+    }
+
+    /**
+     * Flag a shot at [timeSec] (absolute session time) as a missed detection for [csvRound].
+     * Stored in *.manual.json alongside the dismissed-shots file.
+     */
+    fun flagMissedShot(csvRound: Int, timeSec: Float, filePath: String) {
+        val updated = _manualShots.value.toMutableMap()
+        updated[csvRound] = (updated[csvRound]?.toMutableList() ?: mutableListOf()).also { it.add(timeSec) }
+        _manualShots.value = updated
+        viewModelScope.launch(Dispatchers.IO) {
+            withContext(NonCancellable) { saveManualShots(filePath, updated) }
+        }
+    }
+
+    fun unflagManualShot(csvRound: Int, timeSec: Float, filePath: String) {
+        val updated = _manualShots.value.toMutableMap()
+        updated[csvRound] = (updated[csvRound]?.toMutableList() ?: mutableListOf())
+            .also { it.remove(timeSec) }
+        _manualShots.value = updated
+        viewModelScope.launch(Dispatchers.IO) {
+            withContext(NonCancellable) { saveManualShots(filePath, updated) }
+        }
+    }
+
+    /** Recompute and persist the avg hold time for [origRound] using only non-dismissed shots. */
+    private suspend fun syncHoldTimeForRound(origRound: Int, dismissed: Map<Int, Set<Int>>) {
+        val sessionId = _sessionId.value.takeIf { it >= 0 } ?: return
+        val ra = _analytics.value?.roundAnalytics?.find { it.origCsvRound == origRound } ?: return
+        val dismissedSet = dismissed[origRound] ?: emptySet()
+        val activeShots = ra.detectedShots.filterIndexed { i, _ -> i !in dismissedSet }
+        val avgMs = if (activeShots.isNotEmpty())
+            activeShots.map { it.holdSec * 1000f }.average().toLong()
+        else 0L
+        repo.updateRoundHoldMs(sessionId, origRound, avgMs)
     }
 
     fun load(sessionId: Long) {
