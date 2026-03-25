@@ -18,21 +18,32 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -43,8 +54,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.archery.shared.LiveSession
+import com.archery.shared.ScoreZone
 import com.archery.shared.SessionSummary
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.ceil
+import kotlin.math.sqrt
 import kotlinx.coroutines.delay
 
 private val BgPage        = Color(0xFFF8FAFC)
@@ -66,6 +83,7 @@ private val BorderLight   = Color(0xFFE2E8F0)
 fun SessionListScreen(
     onSessionClick: (Long) -> Unit,
     onLiveSessionClick: () -> Unit,
+    onManageProfiles: () -> Unit,
     vm: SessionListViewModel = viewModel(),
 ) {
     val allSessions by vm.sessions.collectAsState()
@@ -77,7 +95,9 @@ fun SessionListScreen(
     val displaySessions = if (showArchived) allSessions else activeSessions
 
     val hasLive = liveSession != null && !(liveSession?.isEnded ?: true)
-    val scoredSessions = activeSessions.filter { it.avgPerArrow > 0 }
+    var showRetroDialog by remember { mutableStateOf(false) }
+    // Explicitly exclude archived (belt-and-suspenders — allSessions already filters isDeleted=0)
+    val scoredSessions = activeSessions.filter { !it.isArchived && it.avgPerArrow > 0 }
 
     if (allSessions.isEmpty() && !hasLive) {
         Box(Modifier.fillMaxSize().background(BgPage), contentAlignment = Alignment.Center) {
@@ -147,27 +167,70 @@ fun SessionListScreen(
 
         if (!hasLive) {
             item {
-                Box(
-                    Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Brush.horizontalGradient(listOf(Cyan600, Cyan800)))
-                        .clickable { vm.startSession() }
-                        .padding(vertical = 14.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Start Session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color.White)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        Modifier.weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Brush.horizontalGradient(listOf(Cyan600, Cyan800)))
+                            .clickable { vm.startSession() }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Start Session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                            color = Color.White)
+                    }
+                    Box(
+                        Modifier.weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(TextMuted.copy(alpha = 0.1f))
+                            .border(1.dp, BorderLight, RoundedCornerShape(12.dp))
+                            .clickable { showRetroDialog = true }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Log Past Session", fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                            color = TextSecondary)
+                    }
                 }
             }
         }
 
-        if (scoredSessions.size >= 2) {
-            item { ScoreTrendChart(scoredSessions.reversed()) }
+        if (showRetroDialog) {
+            item {
+                RetroSessionDialog(
+                    onDismiss = { showRetroDialog = false },
+                    onConfirm = { dateMs, name, roundCount, arrowsPerRound, scores ->
+                        vm.createManualSession(dateMs, name, roundCount, arrowsPerRound, scores)
+                        showRetroDialog = false
+                    },
+                )
+            }
         }
 
-        val holdSessions = activeSessions.filter { (it.avgHoldMs ?: 0L) > 0L }
+        val dateFmt = DateTimeFormatter.ofPattern("M/d")
+
+        if (scoredSessions.size >= 2) {
+            val scoreEntries = scoredSessions.reversed().map { s ->
+                val vals = s.rounds.mapNotNull { r ->
+                    val n = r.arrows.count { it.zone != ScoreZone.DNS }
+                    if (n > 0) (r.displayScore / n).toDouble() else null
+                }
+                val mean = if (vals.isEmpty()) s.avgPerArrow else vals.average().toFloat()
+                BarEntry(mean, stdevOf(vals), s.date.format(dateFmt))
+            }
+            item { TrendBarChart("Avg Score / Arrow", scoreEntries, Cyan600) { "%.1f".format(it) } }
+        }
+
+        val holdSessions = activeSessions.filter { !it.isArchived && (it.avgHoldMs ?: 0L) > 0L }
         if (holdSessions.size >= 2) {
-            item { HoldTimeTrendChart(holdSessions.reversed()) }
+            val holdEntries = holdSessions.reversed().map { s ->
+                val vals = s.rounds.mapNotNull { r ->
+                    (r.avgHoldMs ?: 0L).takeIf { it > 0L }?.let { it / 1000.0 }
+                }
+                val mean = if (vals.isEmpty()) (s.avgHoldMs ?: 0L) / 1000f else vals.average().toFloat()
+                BarEntry(mean, stdevOf(vals), s.date.format(dateFmt))
+            }
+            item { TrendBarChart("Avg Hold / Arrow (s)", holdEntries, Amber700) { "%.1f".format(it) } }
         }
 
         items(displaySessions, key = { it.id }) { s ->
@@ -188,6 +251,21 @@ fun SessionListScreen(
                         .clickable { showArchived = !showArchived }
                         .padding(vertical = 12.dp),
                 )
+            }
+        }
+
+        item {
+            Box(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(TextMuted.copy(alpha = 0.07f))
+                    .border(1.dp, BorderLight, RoundedCornerShape(10.dp))
+                    .clickable(onClick = onManageProfiles)
+                    .padding(vertical = 13.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Detection Settings", fontSize = 14.sp, color = TextSecondary,
+                    fontWeight = FontWeight.Medium)
             }
         }
 
@@ -351,104 +429,192 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
     }
 }
 
+// ── Shared bar-chart helpers ───────────────────────────────────────────────
+
+private data class BarEntry(val mean: Float, val stdev: Float, val xLabel: String)
+
+private fun stdevOf(vals: List<Double>): Float {
+    if (vals.size < 2) return 0f
+    val m = vals.average()
+    return sqrt(vals.sumOf { (it - m) * (it - m) } / vals.size).toFloat()
+}
+
+/** Rounds v up to the nearest multiple of [step]. */
+private fun ceilTo(v: Float, step: Float) = ceil(v / step) * step
+
 @Composable
-private fun HoldTimeTrendChart(sessions: List<SessionSummary>) {
-    val holds = sessions.map { (it.avgHoldMs ?: 0L) / 1000f }
-    val maxH = holds.max(); val minH = holds.min()
-    val range = (maxH - minH).coerceAtLeast(0.1f)
+private fun TrendBarChart(
+    title: String,
+    entries: List<BarEntry>,
+    barColor: Color,
+    yFmt: (Float) -> String,
+) {
+    if (entries.isEmpty()) return
+    // Y-axis: start at 0, end at a "nice" ceiling above max+σ
+    val dataTop = entries.maxOf { it.mean + it.stdev.coerceAtLeast(0f) }
+    val step = when {
+        dataTop > 20 -> 5f
+        dataTop > 10 -> 2f
+        dataTop > 5  -> 1f
+        dataTop > 2  -> 0.5f
+        else         -> 0.2f
+    }
+    val yMax = ceilTo(dataTop * 1.05f, step).coerceAtLeast(step)
 
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = BgWhite),
         shape = RoundedCornerShape(10.dp)) {
         Column(Modifier.padding(14.dp)) {
-            Text("Avg Hold / Arrow (s)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                color = TextPrimary)
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(8.dp))
-            Canvas(Modifier.fillMaxWidth().height(110.dp)) {
-                val w = size.width; val h = size.height
-                val pt = 8f; val pb = 24f; val ch = h - pt - pb
-                for (i in 0..3) {
-                    val y = pt + ch * (1 - i / 3f)
-                    drawLine(BorderLight, Offset(0f, y), Offset(w, y), 1f)
+            Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+                val padL = 46f; val padR = 8f; val padT = 10f; val padB = 28f
+                val cw = size.width - padL - padR
+                val ch = size.height - padT - padB
+                val n = entries.size
+
+                fun yScr(v: Float) = padT + ch * (1f - v / yMax)
+                fun xCenter(i: Int) = padL + cw * (i + 0.5f) / n
+                val yBase = yScr(0f)
+
+                // Y grid lines + labels
+                val yPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.rgb(0x94, 0xA3, 0xB8)
+                    textSize = 20f; isAntiAlias = true
+                    textAlign = android.graphics.Paint.Align.RIGHT
                 }
-                val pts = holds.mapIndexed { i, v ->
-                    Offset(
-                        if (holds.size > 1) w * i / (holds.size - 1f) else w / 2f,
-                        pt + ch * (1 - (v - minH) / range),
-                    )
+                for (k in 0..4) {
+                    val v = yMax * k / 4f
+                    val y = yScr(v)
+                    drawLine(BorderLight, Offset(padL, y), Offset(padL + cw, y), 1f)
+                    drawContext.canvas.nativeCanvas.drawText(yFmt(v), padL - 5f, y + 6f, yPaint)
                 }
-                val area = Path().apply {
-                    moveTo(pts.first().x, pt + ch)
-                    pts.forEach { lineTo(it.x, it.y) }
-                    lineTo(pts.last().x, pt + ch); close()
-                }
-                drawPath(area, Amber700.copy(0.15f))
-                val line = Path().apply {
-                    moveTo(pts.first().x, pts.first().y)
-                    for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
-                }
-                drawPath(line, Amber700, style = Stroke(2.5f))
-                pts.forEach { drawCircle(Amber700, 4f, it); drawCircle(BgWhite, 2f, it) }
-                val paint = android.graphics.Paint().apply {
-                    color = android.graphics.Color.rgb(0x47, 0x55, 0x69)
-                    textSize = 22f; isAntiAlias = true
+
+                // Bars + error bars + x labels
+                val barW = (cw / n * 0.55f).coerceIn(8f, 40f)
+                val xPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.rgb(0x94, 0xA3, 0xB8)
+                    textSize = 20f; isAntiAlias = true
                     textAlign = android.graphics.Paint.Align.CENTER
                 }
-                holds.forEachIndexed { i, v ->
-                    drawContext.canvas.nativeCanvas.drawText("%.1f".format(v),
-                        pts[i].x, pt + ch + pb - 4f, paint)
+                entries.forEachIndexed { i, e ->
+                    val xc = xCenter(i)
+                    val yTop = yScr(e.mean.coerceAtLeast(0f))
+
+                    // Bar
+                    drawRect(
+                        barColor.copy(alpha = 0.75f),
+                        topLeft = Offset(xc - barW / 2, yTop),
+                        size = Size(barW, (yBase - yTop).coerceAtLeast(1f)),
+                    )
+
+                    // Error bar ±1σ
+                    if (e.stdev > 0f) {
+                        val yHi = yScr((e.mean + e.stdev).coerceAtMost(yMax))
+                        val yLo = yScr((e.mean - e.stdev).coerceAtLeast(0f))
+                        val cap = barW * 0.35f
+                        drawLine(barColor, Offset(xc, yHi), Offset(xc, yLo), 2f)
+                        drawLine(barColor, Offset(xc - cap, yHi), Offset(xc + cap, yHi), 2f)
+                        drawLine(barColor, Offset(xc - cap, yLo), Offset(xc + cap, yLo), 2f)
+                    }
+
+                    // X label — skip alternates when bars are crowded
+                    if (n <= 8 || i % 2 == 0)
+                        drawContext.canvas.nativeCanvas.drawText(e.xLabel, xc, size.height - 4f, xPaint)
                 }
             }
         }
     }
 }
 
-@Composable
-private fun ScoreTrendChart(sessions: List<SessionSummary>) {
-    val scores = sessions.map { it.avgPerArrow }
-    val maxS = scores.max(); val minS = scores.min()
-    val range = (maxS - minS).coerceAtLeast(1f)
+// ── Retrospective session dialog ───────────────────────────────────────────
 
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = BgWhite),
-        shape = RoundedCornerShape(10.dp)) {
-        Column(Modifier.padding(14.dp)) {
-            Text("Avg Score / Arrow", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                color = TextPrimary)
-            Spacer(Modifier.height(8.dp))
-            Canvas(Modifier.fillMaxWidth().height(110.dp)) {
-                val w = size.width; val h = size.height
-                val pt = 8f; val pb = 24f; val ch = h - pt - pb
-                for (i in 0..3) {
-                    val y = pt + ch * (1 - i / 3f)
-                    drawLine(BorderLight, Offset(0f, y), Offset(w, y), 1f)
-                }
-                val pts = scores.mapIndexed { i, s ->
-                    Offset(
-                        if (scores.size > 1) w * i / (scores.size - 1f) else w / 2f,
-                        pt + ch * (1 - (s - minS) / range),
+@Composable
+private fun RetroSessionDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (dateMs: Long, name: String?, roundCount: Int, arrowsPerRound: Int, scores: List<Float>) -> Unit,
+) {
+    val todayStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+    var dateText   by remember { mutableStateOf(todayStr) }
+    var nameText   by remember { mutableStateOf("") }
+    var roundText  by remember { mutableIntStateOf(6) }
+    var arrowText  by remember { mutableIntStateOf(3) }
+    val scores     = remember(roundText) { mutableStateListOf(*Array(roundText) { "" }) }
+
+    val dateMs by remember { derivedStateOf {
+        try {
+            LocalDate.parse(dateText, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                .atTime(LocalTime.NOON).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        } catch (e: Exception) { -1L }
+    }}
+    val valid = dateMs > 0L && roundText in 1..30
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Log Past Session", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = dateText, onValueChange = { dateText = it },
+                    label = { Text("Date (YYYY-MM-DD)") }, singleLine = true,
+                    isError = dateMs < 0L,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = nameText, onValueChange = { nameText = it },
+                    label = { Text("Session name (optional)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = roundText.toString(),
+                        onValueChange = { v -> v.toIntOrNull()?.coerceIn(1, 30)?.let {
+                            roundText = it
+                            // grow or shrink score fields
+                            while (scores.size < it) scores.add("")
+                            while (scores.size > it) scores.removeLast()
+                        }},
+                        label = { Text("Rounds") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = arrowText.toString(),
+                        onValueChange = { v -> v.toIntOrNull()?.coerceIn(1, 20)?.let { arrowText = it } },
+                        label = { Text("Arrows/round") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
                     )
                 }
-                val area = Path().apply {
-                    moveTo(pts.first().x, pt + ch)
-                    pts.forEach { lineTo(it.x, it.y) }
-                    lineTo(pts.last().x, pt + ch); close()
-                }
-                drawPath(area, Cyan600.copy(0.15f))
-                val line = Path().apply {
-                    moveTo(pts.first().x, pts.first().y)
-                    for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
-                }
-                drawPath(line, Cyan600, style = Stroke(2.5f))
-                pts.forEach { drawCircle(Cyan600, 4f, it); drawCircle(BgWhite, 2f, it) }
-                val paint = android.graphics.Paint().apply {
-                    color = android.graphics.Color.rgb(0x47, 0x55, 0x69)
-                    textSize = 22f; isAntiAlias = true
-                    textAlign = android.graphics.Paint.Align.CENTER
-                }
-                scores.forEachIndexed { i, s ->
-                    drawContext.canvas.nativeCanvas.drawText("%.1f".format(s),
-                        pts[i].x, pt + ch + pb - 4f, paint)
+                if (roundText in 1..30) {
+                    Text("Round totals (optional)", fontSize = 12.sp, color = TextMuted)
+                    repeat(roundText) { idx ->
+                        OutlinedTextField(
+                            value = scores.getOrElse(idx) { "" },
+                            onValueChange = { v ->
+                                while (scores.size <= idx) scores.add("")
+                                scores[idx] = v
+                            },
+                            label = { Text("Round ${idx + 1}") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
-        }
-    }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (!valid) return@TextButton
+                    val parsedScores = scores.map { it.toFloatOrNull() ?: 0f }
+                    onConfirm(dateMs, nameText.ifBlank { null }, roundText, arrowText, parsedScores)
+                },
+                enabled = valid,
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
