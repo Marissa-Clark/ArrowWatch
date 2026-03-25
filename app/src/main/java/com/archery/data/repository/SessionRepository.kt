@@ -110,6 +110,9 @@ class SessionRepository(db: ArcheryDatabase) {
     suspend fun renameSession(sessionId: Long, name: String?) =
         dao.renameSession(sessionId, name)
 
+    suspend fun updateSessionDate(sessionId: Long, dateMs: Long) =
+        dao.updateSessionDate(sessionId, dateMs)
+
     suspend fun deleteSession(sessionId: Long) =
         dao.deleteSession(sessionId)
 
@@ -156,16 +159,16 @@ class SessionRepository(db: ArcheryDatabase) {
     }
 
     /**
-     * Creates a manual (retrospective) session with [roundCount] empty rounds.
-     * [roundScores] may be shorter than [roundCount]; missing slots default to 0.
+     * Creates a manual (retrospective) session with per-arrow scores.
+     * [arrowData][roundIdx][arrowIdx] = (ScoreZone, score) or null for unset arrows.
+     * Round totals are computed from the entered arrow scores.
      * Returns the new session ID.
      */
     suspend fun createManualSession(
         dateMs: Long,
         displayName: String?,
-        roundCount: Int,
         arrowsPerRound: Int,
-        roundScores: List<Float>,
+        arrowData: List<List<Pair<ScoreZone, Float>?>>,
     ): Long {
         val sessionId = dao.insertSession(
             SessionEntity(
@@ -176,17 +179,31 @@ class SessionRepository(db: ArcheryDatabase) {
                 displayName = displayName?.takeIf { it.isNotBlank() },
             )
         )
-        repeat(roundCount) { idx ->
+        arrowData.forEachIndexed { idx, arrows ->
             val roundNum = idx + 1
-            val score = roundScores.getOrNull(idx)?.takeIf { it > 0f }
-            dao.insertRound(
+            val entered  = arrows.filterNotNull()
+            val total    = entered.sumOf { it.second.toDouble() }.toFloat().takeIf { entered.isNotEmpty() }
+            val roundId  = dao.insertRound(
                 RoundEntity(
                     sessionId      = sessionId,
                     roundNumber    = roundNum,
-                    detectedScore  = score ?: 0f,
-                    confirmedScore = score,
+                    detectedScore  = total ?: 0f,
+                    confirmedScore = total,
                 )
             )
+            val arrowEntities = arrows.mapIndexedNotNull { aIdx, entry ->
+                entry?.let { (zone, score) ->
+                    ArrowEntity(
+                        roundId    = roundId,
+                        sessionId  = sessionId,
+                        shotNumber = aIdx + 1,
+                        zone       = zone.name,
+                        score      = score,
+                        isFinal    = true,
+                    )
+                }
+            }
+            if (arrowEntities.isNotEmpty()) dao.insertArrows(arrowEntities)
         }
         return sessionId
     }

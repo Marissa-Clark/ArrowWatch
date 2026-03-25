@@ -18,27 +18,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,9 +46,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.archery.shared.LiveSession
 import com.archery.shared.ScoreZone
 import com.archery.shared.SessionSummary
-import java.time.LocalDate
-import java.time.LocalTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.ceil
 import kotlin.math.sqrt
@@ -84,6 +71,7 @@ fun SessionListScreen(
     onSessionClick: (Long) -> Unit,
     onLiveSessionClick: () -> Unit,
     onManageProfiles: () -> Unit,
+    onLogPastSession: () -> Unit,
     vm: SessionListViewModel = viewModel(),
 ) {
     val allSessions by vm.sessions.collectAsState()
@@ -95,7 +83,6 @@ fun SessionListScreen(
     val displaySessions = if (showArchived) allSessions else activeSessions
 
     val hasLive = liveSession != null && !(liveSession?.isEnded ?: true)
-    var showRetroDialog by remember { mutableStateOf(false) }
     // Explicitly exclude archived (belt-and-suspenders — allSessions already filters isDeleted=0)
     val scoredSessions = activeSessions.filter { !it.isArchived && it.avgPerArrow > 0 }
 
@@ -184,7 +171,7 @@ fun SessionListScreen(
                             .clip(RoundedCornerShape(12.dp))
                             .background(TextMuted.copy(alpha = 0.1f))
                             .border(1.dp, BorderLight, RoundedCornerShape(12.dp))
-                            .clickable { showRetroDialog = true }
+                            .clickable { onLogPastSession() }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -195,17 +182,7 @@ fun SessionListScreen(
             }
         }
 
-        if (showRetroDialog) {
-            item {
-                RetroSessionDialog(
-                    onDismiss = { showRetroDialog = false },
-                    onConfirm = { dateMs, name, roundCount, arrowsPerRound, scores ->
-                        vm.createManualSession(dateMs, name, roundCount, arrowsPerRound, scores)
-                        showRetroDialog = false
-                    },
-                )
-            }
-        }
+
 
         val dateFmt = DateTimeFormatter.ofPattern("M/d")
 
@@ -526,95 +503,3 @@ private fun TrendBarChart(
     }
 }
 
-// ── Retrospective session dialog ───────────────────────────────────────────
-
-@Composable
-private fun RetroSessionDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (dateMs: Long, name: String?, roundCount: Int, arrowsPerRound: Int, scores: List<Float>) -> Unit,
-) {
-    val todayStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-    var dateText   by remember { mutableStateOf(todayStr) }
-    var nameText   by remember { mutableStateOf("") }
-    var roundText  by remember { mutableIntStateOf(6) }
-    var arrowText  by remember { mutableIntStateOf(3) }
-    val scores     = remember(roundText) { mutableStateListOf(*Array(roundText) { "" }) }
-
-    val dateMs by remember { derivedStateOf {
-        try {
-            LocalDate.parse(dateText, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-                .atTime(LocalTime.NOON).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        } catch (e: Exception) { -1L }
-    }}
-    val valid = dateMs > 0L && roundText in 1..30
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Log Past Session", fontWeight = FontWeight.SemiBold) },
-        text = {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                OutlinedTextField(
-                    value = dateText, onValueChange = { dateText = it },
-                    label = { Text("Date (YYYY-MM-DD)") }, singleLine = true,
-                    isError = dateMs < 0L,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = nameText, onValueChange = { nameText = it },
-                    label = { Text("Session name (optional)") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = roundText.toString(),
-                        onValueChange = { v -> v.toIntOrNull()?.coerceIn(1, 30)?.let {
-                            roundText = it
-                            // grow or shrink score fields
-                            while (scores.size < it) scores.add("")
-                            while (scores.size > it) scores.removeLast()
-                        }},
-                        label = { Text("Rounds") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        value = arrowText.toString(),
-                        onValueChange = { v -> v.toIntOrNull()?.coerceIn(1, 20)?.let { arrowText = it } },
-                        label = { Text("Arrows/round") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (roundText in 1..30) {
-                    Text("Round totals (optional)", fontSize = 12.sp, color = TextMuted)
-                    repeat(roundText) { idx ->
-                        OutlinedTextField(
-                            value = scores.getOrElse(idx) { "" },
-                            onValueChange = { v ->
-                                while (scores.size <= idx) scores.add("")
-                                scores[idx] = v
-                            },
-                            label = { Text("Round ${idx + 1}") }, singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (!valid) return@TextButton
-                    val parsedScores = scores.map { it.toFloatOrNull() ?: 0f }
-                    onConfirm(dateMs, nameText.ifBlank { null }, roundText, arrowText, parsedScores)
-                },
-                enabled = valid,
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}

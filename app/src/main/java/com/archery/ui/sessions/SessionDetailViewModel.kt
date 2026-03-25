@@ -15,6 +15,7 @@ import com.archery.analytics.loadManualShots
 import com.archery.analytics.saveDismissedShots
 import com.archery.analytics.saveManualShots
 import com.archery.analytics.SensorSample
+import com.archery.analytics.synthesizeShotAt
 import com.archery.data.db.ArcheryDatabase
 import com.archery.data.repository.SessionRepository
 import com.archery.shared.ScoreZone
@@ -162,7 +163,10 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
                     _isAnalyticsLoading.value = false
                 }
                 _dismissedState.value = withContext(Dispatchers.IO) { loadDismissedShots(path) }
-                _manualShots.value = withContext(Dispatchers.IO) { loadManualShots(path) }
+                val manual = withContext(Dispatchers.IO) { loadManualShots(path) }
+                _manualShots.value = manual
+                // Re-apply manual shots on top of freshly-parsed analytics
+                _analytics.value = _analytics.value?.let { applyManualShots(it, manual) }
             }
         }
     }
@@ -212,26 +216,65 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
-     * Flag a shot at [timeSec] (absolute session time) as a missed detection for [csvRound].
-     * Stored in *.manual.json alongside the dismissed-shots file.
+     * Flag a missed shot at [timeSec] (absolute session time) for [csvRound].
+     * Synthesises a [DetectedShot] from the sensor data around that time, inserts it into
+     * the live analytics, and persists the time to *.manual.json.
      */
     fun flagMissedShot(csvRound: Int, timeSec: Float, filePath: String) {
+        val ra       = _analytics.value?.roundAnalytics?.find { it.origCsvRound == csvRound } ?: return
+        val synth    = synthesizeShotAt(timeSec, ra.sensorData) ?: return
+
+        // Persist the raw time first
         val updated = _manualShots.value.toMutableMap()
         updated[csvRound] = (updated[csvRound]?.toMutableList() ?: mutableListOf()).also { it.add(timeSec) }
         _manualShots.value = updated
+
+        // Patch the in-memory analytics so the shot appears in chips / stats immediately
+        _analytics.value = _analytics.value?.patchRound(csvRound) { ra ->
+            ra.copy(detectedShots = (ra.detectedShots + synth).sortedBy { it.time })
+        }
+
         viewModelScope.launch(Dispatchers.IO) {
             withContext(NonCancellable) { saveManualShots(filePath, updated) }
         }
     }
 
-    fun unflagManualShot(csvRound: Int, timeSec: Float, filePath: String) {
+    /**
+     * Remove a manually flagged shot identified by its synthesised mid-point [shotTime].
+     * Matches on the nearest manual shot time within 0.5 s.
+     */
+    fun unflagManualShot(csvRound: Int, shotTime: Float, filePath: String) {
+        val times   = _manualShots.value[csvRound] ?: return
+        val closest = times.minByOrNull { kotlin.math.abs(it - shotTime) } ?: return
+        if (kotlin.math.abs(closest - shotTime) > 0.5f) return   // sanity guard
+
         val updated = _manualShots.value.toMutableMap()
-        updated[csvRound] = (updated[csvRound]?.toMutableList() ?: mutableListOf())
-            .also { it.remove(timeSec) }
+        updated[csvRound] = times.toMutableList().also { it.remove(closest) }
         _manualShots.value = updated
+
+        // Remove the matching manual shot from in-memory analytics
+        _analytics.value = _analytics.value?.patchRound(csvRound) { ra ->
+            ra.copy(detectedShots = ra.detectedShots.filterNot {
+                it.isManual && kotlin.math.abs(it.time - shotTime) < 0.5f
+            })
+        }
+
         viewModelScope.launch(Dispatchers.IO) {
             withContext(NonCancellable) { saveManualShots(filePath, updated) }
         }
+    }
+
+    /** Re-applies saved manual shot times after analytics are (re-)parsed. */
+    private fun applyManualShots(analytics: SessionAnalytics, manual: Map<Int, List<Float>>): SessionAnalytics {
+        if (manual.isEmpty()) return analytics
+        return analytics.copy(
+            roundAnalytics = analytics.roundAnalytics.map { ra ->
+                val times = manual[ra.origCsvRound] ?: return@map ra
+                val synths = times.mapNotNull { synthesizeShotAt(it, ra.sensorData) }
+                if (synths.isEmpty()) ra
+                else ra.copy(detectedShots = (ra.detectedShots + synths).sortedBy { it.time })
+            }
+        )
     }
 
     /** Recompute and persist the avg hold time for [origRound] using only non-dismissed shots. */
@@ -275,6 +318,11 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch { repo.renameSession(id, name.trim().ifBlank { null }) }
     }
 
+    fun updateDate(dateMs: Long) {
+        val id = _sessionId.value.takeIf { it >= 0 } ?: return
+        viewModelScope.launch { repo.updateSessionDate(id, dateMs) }
+    }
+
     fun archive(archived: Boolean) {
         val id = _sessionId.value.takeIf { it >= 0 } ?: return
         viewModelScope.launch { repo.setArchived(id, archived) }
@@ -288,3 +336,10 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 }
+
+// ── Extension helpers ─────────────────────────────────────────────────────
+
+private fun SessionAnalytics.patchRound(
+    csvRound: Int,
+    transform: (com.archery.analytics.RoundAnalytics) -> com.archery.analytics.RoundAnalytics,
+) = copy(roundAnalytics = roundAnalytics.map { if (it.origCsvRound == csvRound) transform(it) else it })

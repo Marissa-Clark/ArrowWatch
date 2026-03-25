@@ -700,34 +700,8 @@ private fun RoundAnalyticsCard(
                             dismissedIndices = dismissedShotIndices,
                             onDismiss = onDismissShot,
                             onRestore = onRestoreShot,
+                            onUnflagManual = onUnflagManual,
                         )
-                    }
-
-                    // Manual (flagged) shots — tap chip to unflag
-                    if (manualShotTimes.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("Flagged Missed", fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                            color = ACyan600)
-                        Spacer(Modifier.height(6.dp))
-                        Row(Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            manualShotTimes.sorted().forEachIndexed { i, t ->
-                                Box(
-                                    Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(ACyan100)
-                                        .border(1.dp, ACyan600.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                                        .clickable { onUnflagManual(t) }
-                                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("@%.1fs".format(t - ra.startSec), fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold, color = ACyan800)
-                                        Text("tap to remove", fontSize = 9.sp, color = ACyan600)
-                                    }
-                                }
-                            }
-                        }
                     }
 
                 }
@@ -900,26 +874,53 @@ private fun GravityZChart(
             }
         }
 
-        // "Flag shot here" action row — only visible when crosshair is pinned
+        // Action row — only visible when crosshair is pinned
         if (onFlagMissedAt != null && pinnedFrac != null) {
-            val timeSec = startSec + pinnedFrac!! * timeRange
+            val frac    = pinnedFrac!!
+            val timeSec = startSec + frac * timeRange
+            val nudge   = 0.25f / timeRange   // 0.25 s per tap
             Spacer(Modifier.height(4.dp))
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("t = %.1fs".format(timeSec - startSec), fontSize = 11.sp, color = ACyan600,
-                    modifier = Modifier.weight(1f))
+                // ◀ nudge left
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(ASlate100)
+                        .clickable { pinnedFrac = (frac - nudge).coerceIn(0f, 1f) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) { Text("◀", fontSize = 13.sp, color = ATextSecondary) }
+
+                // Time + gz readout
+                Text(
+                    "t %.1fs".format(timeSec - startSec),
+                    fontSize = 11.sp, color = ACyan600,
+                    modifier = Modifier.weight(1f),
+                )
+
+                // ▶ nudge right
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(ASlate100)
+                        .clickable { pinnedFrac = (frac + nudge).coerceIn(0f, 1f) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) { Text("▶", fontSize = 13.sp, color = ATextSecondary) }
+
+                Spacer(Modifier.width(4.dp))
+
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(4.dp))
                         .background(ACyan600.copy(alpha = 0.1f))
                         .border(1.dp, ACyan600.copy(alpha = 0.35f), RoundedCornerShape(4.dp))
                         .clickable { onFlagMissedAt(timeSec); pinnedFrac = null }
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                 ) {
-                    Text("⚑ Flag missed shot", fontSize = 11.sp, color = ACyan600,
+                    Text("⚑ Flag", fontSize = 11.sp, color = ACyan600,
                         fontWeight = FontWeight.Medium)
                 }
                 Text("✕", fontSize = 13.sp, color = ATextMuted,
@@ -936,6 +937,7 @@ private fun ShotHoldChips(
     dismissedIndices: Set<Int>,
     onDismiss: (Int) -> Unit,
     onRestore: (Int) -> Unit,
+    onUnflagManual: (Float) -> Unit = {},
 ) {
     var selectedShotIdx by remember { mutableIntStateOf(-1) }
 
@@ -943,33 +945,51 @@ private fun ShotHoldChips(
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         shots.forEachIndexed { idx, shot ->
             val dismissed  = idx in dismissedIndices
-            val isSelected = !dismissed && selectedShotIdx == idx
+            val isManual   = shot.isManual
+            val isSelected = !dismissed && !isManual && selectedShotIdx == idx
             val bgColor = when {
+                isManual   -> ACyan100
                 dismissed  -> ABorderLight
                 isSelected -> AHoldGold.copy(alpha = 0.15f)
                 else       -> AHoldGold100
             }
-            val textColor = if (dismissed) ATextMuted else AHoldGold800
+            val textColor = when {
+                isManual  -> ACyan800
+                dismissed -> ATextMuted
+                else      -> AHoldGold800
+            }
             Box(
                 Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(bgColor)
-                    .then(if (isSelected) Modifier.border(1.dp, AHoldGold.copy(alpha = 0.5f), RoundedCornerShape(6.dp)) else Modifier)
+                    .then(when {
+                        isManual   -> Modifier.border(1.dp, ACyan600.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                        isSelected -> Modifier.border(1.dp, AHoldGold.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                        else       -> Modifier
+                    })
                     .clickable {
-                        if (dismissed) onRestore(idx)
-                        else selectedShotIdx = if (selectedShotIdx == idx) -1 else idx
+                        when {
+                            isManual  -> onUnflagManual(shot.time)
+                            dismissed -> onRestore(idx)
+                            else      -> selectedShotIdx = if (selectedShotIdx == idx) -1 else idx
+                        }
                     }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("%.1fs".format(shot.holdSec), fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold, color = textColor)
-                    if (dismissed) {
-                        Text("↩ restore", fontSize = 10.sp, color = ATextMuted)
-                    } else {
-                        Text("Shot ${idx + 1}", fontSize = 10.sp, color = AHoldGold)
-                        if (shot.gzStdev > 0f) {
-                            Text("±%.2f".format(shot.gzStdev), fontSize = 9.sp, color = AGzColor)
+                    Text(
+                        if (isManual) "⚑ %.1fs".format(shot.holdSec)
+                        else "%.1fs".format(shot.holdSec),
+                        fontSize = 13.sp, fontWeight = FontWeight.Bold, color = textColor,
+                    )
+                    when {
+                        isManual  -> Text("tap to unflag", fontSize = 9.sp, color = ACyan600)
+                        dismissed -> Text("↩ restore", fontSize = 10.sp, color = ATextMuted)
+                        else      -> {
+                            Text("Shot ${idx + 1}", fontSize = 10.sp, color = AHoldGold)
+                            if (shot.gzStdev > 0f) {
+                                Text("±%.2f".format(shot.gzStdev), fontSize = 9.sp, color = AGzColor)
+                            }
                         }
                     }
                 }
@@ -979,7 +999,7 @@ private fun ShotHoldChips(
 
     // ── Detail panel for selected detected shot ──
     val selShot = shots.getOrNull(selectedShotIdx)
-    if (selShot != null && selectedShotIdx !in dismissedIndices) {
+    if (selShot != null && selectedShotIdx !in dismissedIndices && !selShot.isManual) {
         Spacer(Modifier.height(8.dp))
         ShotDetailPanel(
             shot      = selShot,
@@ -992,7 +1012,7 @@ private fun ShotHoldChips(
 
     Spacer(Modifier.height(4.dp))
     Text(
-        "Tap chip to inspect · dismissed shots excluded from stats",
+        "Tap chip to inspect · dismissed shots excluded from stats · ⚑ tap to unflag manual",
         fontSize = 10.sp, color = ATextMuted,
     )
 }

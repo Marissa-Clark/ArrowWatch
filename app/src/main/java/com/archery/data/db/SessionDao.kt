@@ -65,6 +65,9 @@ interface SessionDao {
     @Query("UPDATE sessions SET displayName = :name WHERE id = :sessionId")
     suspend fun renameSession(sessionId: Long, name: String?): Int
 
+    @Query("UPDATE sessions SET dateMs = :dateMs WHERE id = :sessionId")
+    suspend fun updateSessionDate(sessionId: Long, dateMs: Long): Int
+
     @Query("UPDATE rounds SET confirmedScore = :score WHERE sessionId = :sessionId AND roundNumber = :roundNumber")
     suspend fun updateRoundScore(sessionId: Long, roundNumber: Int, score: Float): Int
 
