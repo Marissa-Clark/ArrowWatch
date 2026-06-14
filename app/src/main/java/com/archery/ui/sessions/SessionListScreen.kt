@@ -351,6 +351,9 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
                         session.date.format(timeFmt),
                         fontSize = 12.sp, color = AppTextSecondary,
                     )
+                    session.displayName?.let { name ->
+                        Text(name, fontSize = 11.sp, color = AppTextMuted)
+                    }
                 }
                 if (!confirmDelete) {
                     Text("✕", fontSize = 13.sp, color = AppTextMuted,
