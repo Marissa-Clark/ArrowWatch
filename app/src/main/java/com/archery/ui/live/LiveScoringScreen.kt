@@ -271,22 +271,58 @@ private fun ShootingPhaseView(
     onEnterScoring: () -> Unit,
     onEditArrow: (roundNum: Int, shotIndex: Int, zone: ScoreZone, score: Int?) -> Unit,
 ) {
+    // ── Session total + avg card ──────────────────────────────────────────────
+    val sessionTotal = completedRounds.sumOf { (it.confirmedScore ?: it.detectedScore ?: 0f).toDouble() }.toFloat()
+    val totalArrowsScored = completedRounds.sumOf { r -> r.arrows.count { it.isScored && it.zone != ScoreZone.DNS } }
+    val avgPerArrow = if (totalArrowsScored > 0) sessionTotal / totalArrowsScored else null
+
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = HeaderDark),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Total
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    if (sessionTotal > 0f) "%.0f".format(sessionTotal) else "—",
+                    fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                )
+                Text(
+                    "TOTAL", fontSize = 11.sp, fontWeight = FontWeight.Normal,
+                    letterSpacing = 2.sp, color = TextMuted,
+                )
+            }
+            // Divider
+            Box(Modifier.width(1.dp).height(48.dp).background(Color(0xFF334155)))
+            // Avg per arrow
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    if (avgPerArrow != null) "%.1f".format(avgPerArrow) else "—",
+                    fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Amber600,
+                )
+                Text(
+                    "AVG / ARROW", fontSize = 11.sp, fontWeight = FontWeight.Normal,
+                    letterSpacing = 2.sp, color = TextMuted,
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+
+    // ── Current end card — detected shots + enter scoring ─────────────────────
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = BgWhite),
         shape = RoundedCornerShape(12.dp),
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text(
-                "Waiting for arrows...", fontSize = 16.sp, fontWeight = FontWeight.Medium,
-                color = TextPrimary,
-            )
-            Spacer(Modifier.height(8.dp))
-            val shotCount = round?.arrows?.size ?: 0
-            Text("$shotCount / $arrowsPerRound arrows detected", fontSize = 14.sp, color = TextSecondary)
-
             if (round != null && round.arrows.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     round.arrows.forEach { arrow ->
                         val qz = arrow.quickZone
@@ -304,9 +340,8 @@ private fun ShootingPhaseView(
                         }
                     }
                 }
+                Spacer(Modifier.height(12.dp))
             }
-
-            Spacer(Modifier.height(16.dp))
             Button(
                 onClick = onEnterScoring,
                 modifier = Modifier.fillMaxWidth(),
@@ -825,53 +860,16 @@ private fun LiveZoneDistribution(zoneCounts: Map<ScoreZone, Int>) {
         colors = CardDefaults.cardColors(containerColor = BgWhite),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Text(
-                "Zone Distribution",
-                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
-            )
-            Spacer(Modifier.height(10.dp))
-            // Stacked bar
-            Row(
-                Modifier.fillMaxWidth().height(20.dp)
-                    .clip(RoundedCornerShape(4.dp)).background(BgSlate100)
-            ) {
-                ordered.forEach { zone ->
-                    val frac = (zoneCounts[zone] ?: 0).toFloat() / total
-                    Box(
-                        Modifier.weight(frac).height(20.dp)
-                            .background(ZONE_COLORS[zone] ?: TextMuted)
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            // Legend
-            ordered.chunked(2).forEach { pair ->
-                Row(Modifier.fillMaxWidth()) {
-                    pair.forEach { zone ->
-                        val count = zoneCounts[zone] ?: 0
-                        val pct = count * 100f / total
-                        Row(
-                            Modifier.weight(1f).padding(vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                Modifier.size(8.dp).background(
-                                    ZONE_COLORS[zone] ?: TextMuted, RoundedCornerShape(2.dp)
-                                )
-                            )
-                            Text(
-                                zone.label.lowercase().replaceFirstChar { it.uppercase() },
-                                fontSize = 12.sp, color = TextPrimary,
-                            )
-                            Text(
-                                "$count (%.0f%%)".format(pct),
-                                fontSize = 12.sp, color = TextSecondary,
-                            )
-                        }
-                    }
-                }
+        Row(
+            Modifier.fillMaxWidth().height(16.dp)
+                .clip(RoundedCornerShape(10.dp)).background(BgSlate100)
+        ) {
+            ordered.forEach { zone ->
+                val frac = (zoneCounts[zone] ?: 0).toFloat() / total
+                Box(
+                    Modifier.weight(frac).height(16.dp)
+                        .background(ZONE_COLORS[zone] ?: TextMuted)
+                )
             }
         }
     }
