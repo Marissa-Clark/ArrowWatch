@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -120,7 +119,7 @@ fun ShootingScreen(
     ) {
         // ── Arc ring ─────────────────────────────────────────────────────────
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = 7.dp.toPx()
+            val strokeWidth = 5.dp.toPx()   // thinner than before
             val inset = 3.dp.toPx()
             val diameter = size.minDimension - strokeWidth - inset * 2
             val radius = diameter / 2
@@ -129,19 +128,19 @@ fun ShootingScreen(
 
             // Ghost ring
             drawArc(
-                color = Color(0xFF111827),
+                color = Color(0xFF0D1117),
                 startAngle = -90f, sweepAngle = 360f, useCenter = false,
                 topLeft = topLeft, size = arcSize,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Butt),
             )
-            // Coloured segments
+            // Coloured segments — alpha pulled back so the ring doesn't dominate
             if (sessionShotZones.isNotEmpty()) {
                 val total = sessionShotZones.size
                 val sweepEach = 360f / total
                 val gapDeg = if (total > 20) 1f else if (total > 10) 1.5f else 2.5f
                 sessionShotZones.forEachIndexed { i, zone ->
                     drawArc(
-                        color = zoneArcColor(zone),
+                        color = zoneArcColor(zone).copy(alpha = 0.55f),
                         startAngle = -90f + i * sweepEach + gapDeg / 2f,
                         sweepAngle = (sweepEach - gapDeg).coerceAtLeast(1f),
                         useCenter = false,
@@ -161,6 +160,9 @@ fun ShootingScreen(
             verticalArrangement = Arrangement.Center,
         ) {
 
+            // Leading spacer shifts center of gravity down so END clears the top bezel
+            Spacer(modifier = Modifier.height(22.dp))
+
             // ── TOP: End number ───────────────────────────────────────────────
             Text(
                 text = "END  $endNumber",
@@ -173,7 +175,7 @@ fun ShootingScreen(
                 textAlign = TextAlign.Center,
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(22.dp))
 
             // ── CENTER: Score metrics ─────────────────────────────────────────
             Row(
@@ -190,7 +192,7 @@ fun ShootingScreen(
                         text = if (lastEndAvg != null) "%.1f".format(lastEndAvg) else "—",
                         style = MetricStyle.copy(
                             fontSize = 30.sp,
-                            fontWeight = FontWeight.Thin,
+                            fontWeight = FontWeight.Bold,
                             color = if (lastEndAvg != null) scoreColor(lastEndAvg) else WatchTextMuted,
                         ),
                     )
@@ -222,7 +224,7 @@ fun ShootingScreen(
                         text = if (avgPerArrow > 0f) "%.1f".format(avgPerArrow) else "—",
                         style = MetricStyle.copy(
                             fontSize = 30.sp,
-                            fontWeight = FontWeight.Thin,
+                            fontWeight = FontWeight.Bold,
                             color = if (avgPerArrow > 0f) scoreColor(avgPerArrow) else WatchTextMuted,
                         ),
                     )
@@ -245,7 +247,7 @@ fun ShootingScreen(
                 text = if (heartRate > 0f) "${heartRate.toInt()}" else "—",
                 style = MetricStyle.copy(
                     fontSize = 46.sp,
-                    fontWeight = FontWeight.Thin,
+                    fontWeight = FontWeight.Bold,
                     color = if (heartRate > 0f) WatchRed else WatchTextMuted,
                 ),
                 textAlign = TextAlign.Center,
