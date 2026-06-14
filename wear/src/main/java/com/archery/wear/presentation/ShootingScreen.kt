@@ -13,8 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -41,10 +41,8 @@ import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
 import androidx.wear.tooling.preview.devices.WearDevices
 import com.archery.shared.ScoreZone
-import com.archery.wear.presentation.theme.WatchAmber
 import com.archery.wear.presentation.theme.WatchBg
 import com.archery.wear.presentation.theme.WatchBtnDanger
-import com.archery.wear.presentation.theme.WatchGreen
 import com.archery.wear.presentation.theme.WatchRed
 import com.archery.wear.presentation.theme.WatchSurfaceLight
 import com.archery.wear.presentation.theme.WatchTextMuted
@@ -52,17 +50,34 @@ import com.archery.wear.presentation.theme.WatchTextPrimary
 import com.archery.wear.presentation.theme.WatchTextSecondary
 import kotlinx.coroutines.delay
 
-/** Map a ScoreZone to an arc segment colour. */
+// ── Score zone colour mapping for arc segments ───────────────────────────────
+
 private fun zoneArcColor(zone: ScoreZone?): Color = when (zone) {
-    ScoreZone.GOLD  -> Color(0xFFD97706)  // warm amber
-    ScoreZone.RED   -> Color(0xFFDC2626)  // red
-    ScoreZone.BLUE  -> Color(0xFF2563EB)  // blue
-    ScoreZone.BLACK -> Color(0xFF475569)  // dark slate — visible on near-black bg
-    ScoreZone.WHITE -> Color(0xFFCBD5E1)  // light gray
-    ScoreZone.MISS  -> Color(0xFF64748B)  // muted
-    ScoreZone.DNS   -> Color(0xFF374151)  // very dim — did-not-shoot
-    null            -> Color(0xFF1E3A4A)  // placeholder / no zone yet
+    ScoreZone.GOLD  -> Color(0xFFD97706)
+    ScoreZone.RED   -> Color(0xFFDC2626)
+    ScoreZone.BLUE  -> Color(0xFF2563EB)
+    ScoreZone.BLACK -> Color(0xFF475569)
+    ScoreZone.WHITE -> Color(0xFFCBD5E1)
+    ScoreZone.MISS  -> Color(0xFF64748B)
+    ScoreZone.DNS   -> Color(0xFF374151)
+    null            -> Color(0xFF1A2A35)
 }
+
+// ── Colour a metric by which archery zone it falls into ──────────────────────
+// avg ≥ 9 → gold, ≥ 7 → red, ≥ 5 → blue, ≥ 3 → gray, else dim
+
+private fun scoreColor(avg: Float): Color = when {
+    avg >= 9f -> Color(0xFFD97706)   // gold zone
+    avg >= 7f -> Color(0xFFEF4444)   // red zone
+    avg >= 5f -> Color(0xFF3B82F6)   // blue zone
+    avg >= 3f -> Color(0xFF94A3B8)   // black zone — lightened for visibility
+    avg > 0f  -> Color(0xFF64748B)   // white zone
+    else      -> Color(0xFF334155)   // no data yet
+}
+
+// ── Tabular-number text style so digits don't shift width as values change ───
+
+private val MetricStyle = TextStyle(fontFeatureSettings = "tnum")
 
 @Composable
 fun ShootingScreen(
@@ -70,14 +85,12 @@ fun ShootingScreen(
     arrowsPerRound: Int,
     endNumber: Int,
     heartRate: Float,
-    /** Per-arrow average for the most recently completed end; null if first end. */
     lastEndAvg: Float?,
     totalScore: Float,
     avgPerArrow: Float,
     walkingSteps: Int,
     isApprox: Boolean = false,
     roundStartMs: Long = 0L,
-    /** Zone for every arrow shot in completed ends this session (drives the arc). */
     sessionShotZones: List<ScoreZone?> = emptyList(),
     onEnterScoring: () -> Unit,
     onEndSession: () -> Unit,
@@ -85,7 +98,6 @@ fun ShootingScreen(
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-    // Elapsed timer — only ticks when roundStartMs is a real timestamp
     var elapsedSec by remember(roundStartMs) { mutableLongStateOf(0L) }
     LaunchedEffect(roundStartMs) {
         if (roundStartMs <= 0L) return@LaunchedEffect
@@ -106,7 +118,7 @@ fun ShootingScreen(
             .focusRequester(focusRequester)
             .focusable(),
     ) {
-        // ── Arc ring — session shot history around the bezel ─────────────────
+        // ── Arc ring ─────────────────────────────────────────────────────────
         Canvas(modifier = Modifier.fillMaxSize()) {
             val strokeWidth = 7.dp.toPx()
             val inset = 3.dp.toPx()
@@ -115,156 +127,192 @@ fun ShootingScreen(
             val topLeft = Offset(center.x - radius, center.y - radius)
             val arcSize = Size(diameter, diameter)
 
-            // Ghost base ring — always present so the bezel looks intentional
+            // Ghost ring
             drawArc(
-                color = Color(0xFF1E293B),
-                startAngle = -90f,
-                sweepAngle = 360f,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
+                color = Color(0xFF111827),
+                startAngle = -90f, sweepAngle = 360f, useCenter = false,
+                topLeft = topLeft, size = arcSize,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Butt),
             )
-
-            // Coloured segments — one per completed arrow
+            // Coloured segments
             if (sessionShotZones.isNotEmpty()) {
                 val total = sessionShotZones.size
                 val sweepEach = 360f / total
-                // Smaller gap when there are many arrows so segments don't vanish
                 val gapDeg = if (total > 20) 1f else if (total > 10) 1.5f else 2.5f
-
                 sessionShotZones.forEachIndexed { i, zone ->
                     drawArc(
                         color = zoneArcColor(zone),
                         startAngle = -90f + i * sweepEach + gapDeg / 2f,
                         sweepAngle = (sweepEach - gapDeg).coerceAtLeast(1f),
                         useCenter = false,
-                        topLeft = topLeft,
-                        size = arcSize,
+                        topLeft = topLeft, size = arcSize,
                         style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
                     )
                 }
             }
         }
 
-        // ── Main content ─────────────────────────────────────────────────────
+        // ── Main layout ───────────────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 8.dp),
+                .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
+
+            // ── TOP: End number ───────────────────────────────────────────────
+            Text(
+                text = "END  $endNumber",
+                style = MetricStyle.copy(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal,
+                    letterSpacing = 3.sp,
+                    color = WatchTextSecondary,
+                ),
+                textAlign = TextAlign.Center,
+            )
+
             Spacer(modifier = Modifier.height(14.dp))
 
-            // End label — bigger, bolder than before
-            Text(
-                text = "END $endNumber",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = WatchTextSecondary,
-                letterSpacing = 2.sp,
-                textAlign = TextAlign.Center,
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            // Heart rate — dominant central metric
-            Text(
-                text = if (heartRate > 0) "${heartRate.toInt()}" else "—",
-                fontSize = 44.sp,
-                fontWeight = FontWeight.Light,
-                color = if (heartRate > 0) WatchRed else WatchTextMuted,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                text = "bpm",
-                fontSize = 9.sp,
-                color = WatchTextMuted,
-                letterSpacing = 1.sp,
-            )
-
-            // Last end avg — shows after first end is completed
-            Spacer(modifier = Modifier.height(3.dp))
-            if (lastEndAvg != null) {
-                Text(
-                    text = "last  %.1f / arrow".format(lastEndAvg),
-                    fontSize = 9.sp,
-                    color = WatchGreen,
-                    letterSpacing = 0.3.sp,
-                    textAlign = TextAlign.Center,
-                )
-            } else {
-                // Placeholder height so layout doesn't jump when it appears
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Session totals
+            // ── CENTER: Score metrics ─────────────────────────────────────────
             Row(
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // Last end avg
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
-                        text = if (totalScore > 0) "%.0f".format(totalScore) else "—",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = WatchTextPrimary,
+                        text = if (lastEndAvg != null) "%.1f".format(lastEndAvg) else "—",
+                        style = MetricStyle.copy(
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.Thin,
+                            color = if (lastEndAvg != null) scoreColor(lastEndAvg) else WatchTextMuted,
+                        ),
                     )
-                    Text(text = "total", fontSize = 8.sp, color = WatchTextMuted, letterSpacing = 0.5.sp)
+                    Text(
+                        text = "LAST",
+                        style = TextStyle(
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Normal,
+                            letterSpacing = 1.5.sp,
+                            color = WatchTextMuted,
+                        ),
+                    )
                 }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+
+                // Vertical divider
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(40.dp)
+                        .background(Color(0xFF1E293B)),
+                )
+
+                // Overall avg per arrow
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
-                        text = if (avgPerArrow > 0) "%.1f".format(avgPerArrow) else "—",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = WatchAmber,
+                        text = if (avgPerArrow > 0f) "%.1f".format(avgPerArrow) else "—",
+                        style = MetricStyle.copy(
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.Thin,
+                            color = if (avgPerArrow > 0f) scoreColor(avgPerArrow) else WatchTextMuted,
+                        ),
                     )
-                    Text(text = "avg", fontSize = 8.sp, color = WatchTextMuted, letterSpacing = 0.5.sp)
+                    Text(
+                        text = "AVG",
+                        style = TextStyle(
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Normal,
+                            letterSpacing = 1.5.sp,
+                            color = WatchTextMuted,
+                        ),
+                    )
                 }
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // ── BOTTOM: Heart rate ────────────────────────────────────────────
+            Text(
+                text = if (heartRate > 0f) "${heartRate.toInt()}" else "—",
+                style = MetricStyle.copy(
+                    fontSize = 46.sp,
+                    fontWeight = FontWeight.Thin,
+                    color = if (heartRate > 0f) WatchRed else WatchTextMuted,
+                ),
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = "BPM",
+                style = TextStyle(
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Normal,
+                    letterSpacing = 2.sp,
+                    color = WatchTextMuted,
+                ),
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Score End — main action (crown forward also works)
             Button(
                 onClick = onEnterScoring,
-                modifier = Modifier.fillMaxWidth(0.78f).height(36.dp),
+                modifier = Modifier.fillMaxWidth(0.75f).height(32.dp),
                 colors = ButtonDefaults.buttonColors(backgroundColor = WatchSurfaceLight),
             ) {
                 Text(
-                    text = "Score End",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = WatchTextSecondary,
+                    text = "SCORE END",
+                    style = TextStyle(
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Normal,
+                        letterSpacing = 1.sp,
+                        color = WatchTextSecondary,
+                    ),
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
+            // End session — small, danger-red
             Button(
                 onClick = onEndSession,
-                modifier = Modifier.width(56.dp).height(26.dp),
+                modifier = Modifier.width(52.dp).height(24.dp),
                 colors = ButtonDefaults.buttonColors(backgroundColor = WatchBtnDanger),
             ) {
-                Text("End", fontSize = 10.sp, color = WatchTextPrimary)
+                Text(
+                    text = "END",
+                    style = TextStyle(
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Normal,
+                        letterSpacing = 1.sp,
+                        color = WatchTextPrimary,
+                    ),
+                )
             }
-
-            Spacer(modifier = Modifier.height(10.dp))
         }
 
-        // Timer — top-right overlay, only once a real round has started
+        // ── Timer — top-right overlay ────────────────────────────────────────
         if (roundStartMs > 0L) {
             Text(
                 text = timerText,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 8.dp, end = 10.dp),
-                fontSize = 9.sp,
-                color = WatchTextMuted,
-                letterSpacing = 0.5.sp,
+                    .padding(top = 10.dp, end = 12.dp),
+                style = TextStyle(
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Normal,
+                    letterSpacing = 0.5.sp,
+                    color = WatchTextMuted,
+                    fontFeatureSettings = "tnum",
+                ),
             )
         }
     }
@@ -272,79 +320,64 @@ fun ShootingScreen(
 
 // ── Previews ─────────────────────────────────────────────────────────────────
 
-@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "Shooting – first end")
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "End 1 – no prior data")
 @Composable
 private fun ShootingPreviewFirst() {
     com.archery.wear.presentation.theme.ArcheryTheme {
         ShootingScreen(
-            shotCount = 0,
-            arrowsPerRound = 3,
-            endNumber = 1,
-            heartRate = 68f,
+            shotCount = 0, arrowsPerRound = 3, endNumber = 1,
+            heartRate = 65f,
             lastEndAvg = null,
-            totalScore = 0f,
-            avgPerArrow = 0f,
-            walkingSteps = 0,
-            roundStartMs = 0L,
+            totalScore = 0f, avgPerArrow = 0f,
+            walkingSteps = 0, roundStartMs = 0L,
             sessionShotZones = emptyList(),
-            onEnterScoring = {},
-            onEndSession = {},
+            onEnterScoring = {}, onEndSession = {},
         )
     }
 }
 
-@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "Shooting – mid session 3×10")
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "End 5 – gold range")
 @Composable
-private fun ShootingPreviewMid() {
+private fun ShootingPreviewGold() {
     com.archery.wear.presentation.theme.ArcheryTheme {
         ShootingScreen(
-            shotCount = 0,
-            arrowsPerRound = 3,
-            endNumber = 5,
-            heartRate = 84f,
-            lastEndAvg = 8.3f,
-            totalScore = 99f,
-            avgPerArrow = 8.3f,
+            shotCount = 0, arrowsPerRound = 3, endNumber = 5,
+            heartRate = 82f,
+            lastEndAvg = 9.3f,
+            totalScore = 111f, avgPerArrow = 9.2f,
             walkingSteps = 0,
             roundStartMs = System.currentTimeMillis() - 95_000L,
             sessionShotZones = listOf(
-                ScoreZone.GOLD, ScoreZone.RED, ScoreZone.GOLD,   // end 1
-                ScoreZone.GOLD, ScoreZone.BLUE, ScoreZone.RED,   // end 2
-                ScoreZone.RED,  ScoreZone.GOLD, ScoreZone.BLUE,  // end 3
-                ScoreZone.MISS, ScoreZone.GOLD, ScoreZone.RED,   // end 4
+                ScoreZone.GOLD, ScoreZone.GOLD, ScoreZone.RED,
+                ScoreZone.GOLD, ScoreZone.RED,  ScoreZone.GOLD,
+                ScoreZone.GOLD, ScoreZone.GOLD, ScoreZone.GOLD,
+                ScoreZone.RED,  ScoreZone.GOLD, ScoreZone.GOLD,
             ),
-            onEnterScoring = {},
-            onEndSession = {},
+            onEnterScoring = {}, onEndSession = {},
         )
     }
 }
 
-@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "Shooting – late session 3×10")
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "End 7 – blue range")
 @Composable
-private fun ShootingPreviewLate() {
+private fun ShootingPreviewBlue() {
     com.archery.wear.presentation.theme.ArcheryTheme {
         ShootingScreen(
-            shotCount = 0,
-            arrowsPerRound = 3,
-            endNumber = 9,
+            shotCount = 0, arrowsPerRound = 3, endNumber = 7,
             heartRate = 91f,
-            lastEndAvg = 7.7f,
-            totalScore = 222f,
-            avgPerArrow = 7.9f,
+            lastEndAvg = 6.0f,
+            totalScore = 126f, avgPerArrow = 5.8f,
             walkingSteps = 0,
             roundStartMs = System.currentTimeMillis() - 210_000L,
             sessionShotZones = listOf(
-                ScoreZone.GOLD, ScoreZone.RED,  ScoreZone.GOLD,
+                ScoreZone.BLUE, ScoreZone.RED,  ScoreZone.BLUE,
                 ScoreZone.GOLD, ScoreZone.BLUE, ScoreZone.RED,
-                ScoreZone.RED,  ScoreZone.GOLD, ScoreZone.BLUE,
-                ScoreZone.MISS, ScoreZone.GOLD, ScoreZone.RED,
-                ScoreZone.GOLD, ScoreZone.GOLD, ScoreZone.RED,
-                ScoreZone.BLUE, ScoreZone.RED,  ScoreZone.GOLD,
-                ScoreZone.RED,  ScoreZone.MISS, ScoreZone.BLUE,
-                ScoreZone.GOLD, ScoreZone.RED,  ScoreZone.GOLD,
+                ScoreZone.BLUE, ScoreZone.MISS, ScoreZone.BLUE,
+                ScoreZone.RED,  ScoreZone.BLUE, ScoreZone.BLUE,
+                ScoreZone.BLUE, ScoreZone.GOLD, ScoreZone.RED,
+                ScoreZone.BLUE, ScoreZone.BLUE, ScoreZone.MISS,
             ),
-            onEnterScoring = {},
-            onEndSession = {},
+            onEnterScoring = {}, onEndSession = {},
         )
     }
 }
