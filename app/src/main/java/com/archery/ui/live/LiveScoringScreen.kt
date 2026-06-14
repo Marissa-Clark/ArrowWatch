@@ -207,7 +207,6 @@ fun LiveScoringScreen(
             when (phase) {
                 WatchPhase.SHOOTING -> {
                     ShootingPhaseView(
-                        round = currentRound,
                         arrowsPerRound = s.arrowsPerRound,
                         completedRounds = completedRounds,
                         onEnterScoring = vm::enterScoring,
@@ -265,7 +264,6 @@ fun LiveScoringScreen(
 
 @Composable
 private fun ShootingPhaseView(
-    round: LiveRound?,
     arrowsPerRound: Int,
     completedRounds: List<LiveRound>,
     onEnterScoring: () -> Unit,
@@ -322,26 +320,6 @@ private fun ShootingPhaseView(
         shape = RoundedCornerShape(12.dp),
     ) {
         Column(Modifier.padding(16.dp)) {
-            if (round != null && round.arrows.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    round.arrows.forEach { arrow ->
-                        val qz = arrow.quickZone
-                        val zoneColor = ZONE_COLORS[qz]
-                        Box(
-                            Modifier.size(28.dp).clip(CircleShape).background(zoneColor ?: BorderLight),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                qz?.label?.take(1) ?: "?",
-                                fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                                color = if (qz == ScoreZone.WHITE || qz == ScoreZone.MISS)
-                                    TextPrimary else Color.White,
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-            }
             Button(
                 onClick = onEnterScoring,
                 modifier = Modifier.fillMaxWidth(),
@@ -917,7 +895,6 @@ private val previewCompletedRounds = listOf(
 @Composable
 private fun PreviewShootingEmpty() {
     ShootingPhaseView(
-        round = null,
         arrowsPerRound = 3,
         completedRounds = emptyList(),
         onEnterScoring = {},
@@ -930,7 +907,6 @@ private fun PreviewShootingEmpty() {
 private fun PreviewShootingWithHistory() {
     Column(Modifier.background(BgPage).padding(20.dp)) {
         ShootingPhaseView(
-            round = LiveRound(number = 4, arrows = previewArrows3),
             arrowsPerRound = 3,
             completedRounds = previewCompletedRounds,
             onEnterScoring = {},
