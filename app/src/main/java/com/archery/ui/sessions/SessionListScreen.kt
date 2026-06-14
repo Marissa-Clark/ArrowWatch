@@ -48,6 +48,7 @@ import com.archery.shared.ScoreZone
 import com.archery.shared.SessionSummary
 import com.archery.ui.theme.*
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.math.ceil
 import kotlin.math.sqrt
 import kotlinx.coroutines.delay
@@ -177,27 +178,44 @@ fun SessionListScreen(
 
         val dateFmt = DateTimeFormatter.ofPattern("M/d")
 
-        if (scoredSessions.size >= 2) {
-            val scoreEntries = scoredSessions.reversed().map { s ->
-                val vals = s.rounds.mapNotNull { r ->
+        // Group sessions by calendar day; average same-day sessions together
+        val scoreDailyGroups = scoredSessions
+            .groupBy { it.date.toLocalDate() }
+            .entries.sortedBy { it.key }
+        val scoreFirstDay = scoreDailyGroups.firstOrNull()?.key
+        val scoreEntries = scoreDailyGroups.map { (day, sessions) ->
+            val vals = sessions.flatMap { s ->
+                s.rounds.mapNotNull { r ->
                     val n = r.arrows.count { it.zone != ScoreZone.DNS }
                     if (n > 0) (r.displayScore / n).toDouble() else null
                 }
-                val mean = if (vals.isEmpty()) s.avgPerArrow else vals.average().toFloat()
-                BarEntry(mean, stdevOf(vals), s.date.format(dateFmt))
             }
+            val mean = if (vals.isNotEmpty()) vals.average().toFloat()
+                       else sessions.map { it.avgPerArrow }.average().toFloat()
+            val offset = if (scoreFirstDay != null) ChronoUnit.DAYS.between(scoreFirstDay, day) else 0L
+            BarEntry(mean, stdevOf(vals), day.format(dateFmt), offset)
+        }
+        if (scoreEntries.size >= 2) {
             item { TrendLineChart("Avg Score / Arrow", scoreEntries, AppCyan600) { "%.1f".format(it) } }
         }
 
         val holdSessions = activeSessions.filter { (it.avgHoldMs ?: 0L) > 0L }
-        if (holdSessions.size >= 2) {
-            val holdEntries = holdSessions.reversed().map { s ->
-                val vals = s.rounds.mapNotNull { r ->
+        val holdDailyGroups = holdSessions
+            .groupBy { it.date.toLocalDate() }
+            .entries.sortedBy { it.key }
+        val holdFirstDay = holdDailyGroups.firstOrNull()?.key
+        val holdEntries = holdDailyGroups.map { (day, sessions) ->
+            val vals = sessions.flatMap { s ->
+                s.rounds.mapNotNull { r ->
                     (r.avgHoldMs ?: 0L).takeIf { it > 0L }?.let { it / 1000.0 }
                 }
-                val mean = if (vals.isEmpty()) (s.avgHoldMs ?: 0L) / 1000f else vals.average().toFloat()
-                BarEntry(mean, stdevOf(vals), s.date.format(dateFmt))
             }
+            val mean = if (vals.isNotEmpty()) vals.average().toFloat()
+                       else sessions.map { (it.avgHoldMs ?: 0L) / 1000f }.average().toFloat()
+            val offset = if (holdFirstDay != null) ChronoUnit.DAYS.between(holdFirstDay, day) else 0L
+            BarEntry(mean, stdevOf(vals), day.format(dateFmt), offset)
+        }
+        if (holdEntries.size >= 2) {
             item { TrendLineChart("Avg Hold / Arrow (s)", holdEntries, Amber700) { "%.1f".format(it) } }
         }
 
@@ -340,9 +358,9 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
         shape = RoundedCornerShape(12.dp),
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            // ── Date headline + delete ────────────────────────────────────────
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.Top) {
-                Column {
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                // ── Left: date + time + optional name ────────────────────────
+                Column(Modifier.weight(1f)) {
                     Text(
                         session.date.format(dateFmt),
                         fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppHeaderDark,
@@ -355,46 +373,40 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
                         Text(name, fontSize = 11.sp, color = AppTextMuted)
                     }
                 }
-                if (!confirmDelete) {
-                    Text("✕", fontSize = 13.sp, color = AppTextMuted,
-                        modifier = Modifier.clickable { confirmDelete = true }.padding(4.dp))
-                }
-            }
 
-            if (confirmDelete) {
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Delete this session?", fontSize = 12.sp, color = Red600,
-                        modifier = Modifier.weight(1f))
-                    Text("Yes", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Red600.copy(alpha = 0.1f))
-                            .clickable { onDelete() }
-                            .padding(horizontal = 10.dp, vertical = 4.dp))
-                    Text("No", fontSize = 12.sp, color = AppTextMuted,
-                        modifier = Modifier
-                            .clickable { confirmDelete = false }
-                            .padding(horizontal = 6.dp, vertical = 4.dp))
-                }
-            } else {
-                Spacer(Modifier.height(10.dp))
-                // ── Three stat columns ────────────────────────────────────────
-                Row(Modifier.fillMaxWidth()) {
-                    SessionStat(Modifier.weight(1f), "ENDS",   "${session.rounds.size}")
-                    SessionStatDivider()
-                    SessionStat(Modifier.weight(1f), "ARROWS", "${session.totalArrows}")
-                    SessionStatDivider()
-                    SessionStat(
-                        modifier = Modifier.weight(1f),
-                        label   = "AVG",
-                        value   = if (avg > 0) "%.1f".format(avg) else "—",
-                        color   = if (avg > 0) Amber700 else AppTextMuted,
-                    )
+                if (confirmDelete) {
+                    // ── Delete confirm ────────────────────────────────────────
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Delete?", fontSize = 12.sp, color = Red600)
+                        Text("Yes", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Red600.copy(alpha = 0.1f))
+                                .clickable { onDelete() }
+                                .padding(horizontal = 10.dp, vertical = 4.dp))
+                        Text("No", fontSize = 12.sp, color = AppTextMuted,
+                            modifier = Modifier
+                                .clickable { confirmDelete = false }
+                                .padding(horizontal = 6.dp, vertical = 4.dp))
+                    }
+                } else {
+                    // ── Right: three stat columns + delete ────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SessionStat(label = "ENDS",   value = "${session.rounds.size}")
+                        SessionStatDivider()
+                        SessionStat(label = "ARROWS", value = "${session.totalArrows}")
+                        SessionStatDivider()
+                        SessionStat(
+                            label = "AVG",
+                            value = if (avg > 0) "%.1f".format(avg) else "—",
+                            color = if (avg > 0) Amber700 else AppTextMuted,
+                        )
+                        Text("  ✕", fontSize = 13.sp, color = AppTextMuted,
+                            modifier = Modifier.clickable { confirmDelete = true }.padding(start = 8.dp, top = 4.dp, bottom = 4.dp))
+                    }
                 }
             }
         }
@@ -403,16 +415,15 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
 
 @Composable
 private fun SessionStat(
-    modifier: Modifier = Modifier,
     label: String,
     value: String,
     color: Color = AppHeaderDark,
 ) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, fontSize = 10.sp, color = AppTextMuted,
             fontWeight = FontWeight.Medium, letterSpacing = 1.sp)
         Spacer(Modifier.height(2.dp))
-        Text(value, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = color)
+        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = color)
     }
 }
 
@@ -428,7 +439,7 @@ private fun SessionStatDivider() {
 
 // ── Shared trend-chart helpers ────────────────────────────────────────────────
 
-private data class BarEntry(val mean: Float, val stdev: Float, val xLabel: String)
+private data class BarEntry(val mean: Float, val stdev: Float, val xLabel: String, val dayOffset: Long = 0L)
 
 private fun stdevOf(vals: List<Double>): Float {
     if (vals.size < 2) return 0f
@@ -469,8 +480,13 @@ private fun TrendLineChart(
                 val ch = size.height - padT - padB
 
                 fun yScr(v: Float) = padT + ch * (1f - (v / yMax).coerceIn(0f, 1f))
-                // Edge-to-edge x: first point at left edge, last at right edge
-                fun xPos(i: Int) = if (n > 1) padL + cw * i / (n - 1f) else padL + cw / 2f
+                // Time-based x: position proportional to actual days since first entry
+                val maxOffset = entries.maxOf { it.dayOffset }.coerceAtLeast(1L)
+                fun xPos(i: Int) = when {
+                    n <= 1     -> padL + cw / 2f
+                    maxOffset == 1L -> padL + cw * i / (n - 1f)   // all same day → spread evenly
+                    else       -> padL + cw * entries[i].dayOffset / maxOffset.toFloat()
+                }
 
                 // Y grid + labels
                 val yPaint = android.graphics.Paint().apply {
