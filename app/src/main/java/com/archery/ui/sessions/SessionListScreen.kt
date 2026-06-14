@@ -48,7 +48,6 @@ import com.archery.shared.ScoreZone
 import com.archery.shared.SessionSummary
 import com.archery.ui.theme.*
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import kotlin.math.ceil
 import kotlin.math.sqrt
 import kotlinx.coroutines.delay
@@ -178,42 +177,26 @@ fun SessionListScreen(
 
         val dateFmt = DateTimeFormatter.ofPattern("M/d")
 
-        // Group sessions by calendar day; average same-day sessions together
-        val scoreDailyGroups = scoredSessions
-            .groupBy { it.date.toLocalDate() }
-            .entries.sortedBy { it.key }
-        val scoreFirstDay = scoreDailyGroups.firstOrNull()?.key
-        val scoreEntries = scoreDailyGroups.map { (day, sessions) ->
-            val vals = sessions.flatMap { s ->
-                s.rounds.mapNotNull { r ->
-                    val n = r.arrows.count { it.zone != ScoreZone.DNS }
-                    if (n > 0) (r.displayScore / n).toDouble() else null
-                }
+        // One entry per session, oldest first
+        val scoreEntries = scoredSessions.reversed().mapIndexed { i, s ->
+            val vals = s.rounds.mapNotNull { r ->
+                val n = r.arrows.count { it.zone != ScoreZone.DNS }
+                if (n > 0) (r.displayScore / n).toDouble() else null
             }
-            val mean = if (vals.isNotEmpty()) vals.average().toFloat()
-                       else sessions.map { it.avgPerArrow }.average().toFloat()
-            val offset = if (scoreFirstDay != null) ChronoUnit.DAYS.between(scoreFirstDay, day) else 0L
-            BarEntry(mean, stdevOf(vals), day.format(dateFmt), offset)
+            val mean = if (vals.isNotEmpty()) vals.average().toFloat() else s.avgPerArrow
+            BarEntry(mean, stdevOf(vals), s.date.format(dateFmt), i.toLong())
         }
         if (scoreEntries.size >= 2) {
             item { TrendLineChart("Avg Score / Arrow", scoreEntries, AppCyan600) { "%.1f".format(it) } }
         }
 
         val holdSessions = activeSessions.filter { (it.avgHoldMs ?: 0L) > 0L }
-        val holdDailyGroups = holdSessions
-            .groupBy { it.date.toLocalDate() }
-            .entries.sortedBy { it.key }
-        val holdFirstDay = holdDailyGroups.firstOrNull()?.key
-        val holdEntries = holdDailyGroups.map { (day, sessions) ->
-            val vals = sessions.flatMap { s ->
-                s.rounds.mapNotNull { r ->
-                    (r.avgHoldMs ?: 0L).takeIf { it > 0L }?.let { it / 1000.0 }
-                }
+        val holdEntries = holdSessions.reversed().mapIndexed { i, s ->
+            val vals = s.rounds.mapNotNull { r ->
+                (r.avgHoldMs ?: 0L).takeIf { it > 0L }?.let { it / 1000.0 }
             }
-            val mean = if (vals.isNotEmpty()) vals.average().toFloat()
-                       else sessions.map { (it.avgHoldMs ?: 0L) / 1000f }.average().toFloat()
-            val offset = if (holdFirstDay != null) ChronoUnit.DAYS.between(holdFirstDay, day) else 0L
-            BarEntry(mean, stdevOf(vals), day.format(dateFmt), offset)
+            val mean = if (vals.isNotEmpty()) vals.average().toFloat() else (s.avgHoldMs ?: 0L) / 1000f
+            BarEntry(mean, stdevOf(vals), s.date.format(dateFmt), i.toLong())
         }
         if (holdEntries.size >= 2) {
             item { TrendLineChart("Avg Hold / Arrow (s)", holdEntries, Amber700) { "%.1f".format(it) } }
