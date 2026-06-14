@@ -88,14 +88,16 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         profile: DetectionProfile,
     ): ProfileSuggestion? {
         if (analytics == null) return null
+        // Manual shots are missed detections, not false positives — exclude them from threshold
+        // tuning so zeroed-out gzD values don't corrupt the suggestion.
         val dismissedShots = analytics.roundAnalytics.flatMap { ra ->
             val d = dismissed[ra.origCsvRound] ?: emptySet()
-            ra.detectedShots.filterIndexed { i, _ -> i in d }
+            ra.detectedShots.filterIndexed { i, s -> i in d && !s.isManual }
         }
         if (dismissedShots.isEmpty()) return null
         val keptShots = analytics.roundAnalytics.flatMap { ra ->
             val d = dismissed[ra.origCsvRound] ?: emptySet()
-            ra.detectedShots.filterIndexed { i, _ -> i !in d }
+            ra.detectedShots.filterIndexed { i, s -> i !in d && !s.isManual }
         }
 
         // Characteristic gzD value per shot = mean of its gzDWindow
@@ -222,7 +224,7 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
      */
     fun flagMissedShot(csvRound: Int, timeSec: Float, filePath: String) {
         val ra       = _analytics.value?.roundAnalytics?.find { it.origCsvRound == csvRound } ?: return
-        val synth    = synthesizeShotAt(timeSec, ra.sensorData) ?: return
+        val synth    = synthesizeShotAt(timeSec, ra.sensorData, DetectionSettings.active.value) ?: return
 
         // Persist the raw time first
         val updated = _manualShots.value.toMutableMap()
@@ -246,7 +248,8 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
     fun unflagManualShot(csvRound: Int, shotTime: Float, filePath: String) {
         val times   = _manualShots.value[csvRound] ?: return
         val closest = times.minByOrNull { kotlin.math.abs(it - shotTime) } ?: return
-        if (kotlin.math.abs(closest - shotTime) > 0.5f) return   // sanity guard
+        // Guard is maxRadiusSec (3 s) — covers the worst-case asymmetric midpoint shift.
+        if (kotlin.math.abs(closest - shotTime) > 3.0f) return
 
         val updated = _manualShots.value.toMutableMap()
         updated[csvRound] = times.toMutableList().also { it.remove(closest) }
@@ -255,7 +258,7 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         // Remove the matching manual shot from in-memory analytics
         _analytics.value = _analytics.value?.patchRound(csvRound) { ra ->
             ra.copy(detectedShots = ra.detectedShots.filterNot {
-                it.isManual && kotlin.math.abs(it.time - shotTime) < 0.5f
+                it.isManual && kotlin.math.abs(it.time - shotTime) < 3.0f
             })
         }
 
@@ -270,7 +273,8 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         return analytics.copy(
             roundAnalytics = analytics.roundAnalytics.map { ra ->
                 val times = manual[ra.origCsvRound] ?: return@map ra
-                val synths = times.mapNotNull { synthesizeShotAt(it, ra.sensorData) }
+                val profile = DetectionSettings.active.value
+                val synths = times.mapNotNull { synthesizeShotAt(it, ra.sensorData, profile) }
                 if (synths.isEmpty()) ra
                 else ra.copy(detectedShots = (ra.detectedShots + synths).sortedBy { it.time })
             }
@@ -321,6 +325,11 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
     fun updateDate(dateMs: Long) {
         val id = _sessionId.value.takeIf { it >= 0 } ?: return
         viewModelScope.launch { repo.updateSessionDate(id, dateMs) }
+    }
+
+    fun updateDistanceTarget(distanceM: Int?, targetSizeCm: Int?) {
+        val id = _sessionId.value.takeIf { it >= 0 } ?: return
+        viewModelScope.launch { repo.updateDistanceTarget(id, distanceM, targetSizeCm) }
     }
 
     fun archive(archived: Boolean) {

@@ -44,7 +44,9 @@ data class WatchSession(
 ) {
     val currentRound: WatchRound? get() = rounds.lastOrNull()
     val totalShots: Int get() = rounds.sumOf { it.shots.size }
-    val nonDnsShots: Int get() = rounds.sumOf { r -> r.shots.count { !it.isDns } }
+    // Only count slots that have actually been scored (effectiveZone != null) and are not DNS.
+    // Empty pre-allocated slots (zone == null, isDns == false) must not inflate the denominator.
+    val nonDnsShots: Int get() = rounds.sumOf { r -> r.shots.count { it.effectiveZone != null && !it.isDns } }
     val totalScore: Float get() = rounds.sumOf { (it.displayScore ?: 0f).toDouble() }.toFloat()
     val avgPerArrow: Float get() = if (nonDnsShots > 0) totalScore / nonDnsShots else 0f
 

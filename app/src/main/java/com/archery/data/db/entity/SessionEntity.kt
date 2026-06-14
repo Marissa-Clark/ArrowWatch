@@ -22,4 +22,8 @@ data class SessionEntity(
     val isDeleted: Boolean = false,
     /** When true, the user has confirmed detection is correct — suppress re-run prompts. */
     val analyticsLocked: Boolean = false,
+    /** Shooting distance in metres; null if not set. */
+    val distanceM: Int? = null,
+    /** Target face diameter in cm (e.g. 40, 60, 80, 122); null if not set. */
+    val targetSizeCm: Int? = null,
 )

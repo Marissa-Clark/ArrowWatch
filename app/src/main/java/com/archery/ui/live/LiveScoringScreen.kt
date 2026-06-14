@@ -640,9 +640,9 @@ private fun CompletedRoundRow(round: LiveRound) {
                     }
                 }
             }
-            val prefix = if (confirmed) "" else "~"
+            @Suppress("UNUSED_VARIABLE") val isApprox = !confirmed
             Text(
-                if (total != null && total > 0) "$prefix%.0f".format(total) else "—",
+                if (total != null && total > 0) "%.0f".format(total) else "—",
                 fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                 color = if (confirmed) Cyan800 else Amber600,
             )

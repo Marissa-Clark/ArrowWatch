@@ -88,6 +88,9 @@ interface SessionDao {
     @Query("UPDATE sessions SET analyticsLocked = :locked WHERE id = :sessionId")
     suspend fun setAnalyticsLocked(sessionId: Long, locked: Boolean): Int
 
+    @Query("UPDATE sessions SET distanceM = :distanceM, targetSizeCm = :targetSizeCm WHERE id = :sessionId")
+    suspend fun updateDistanceTarget(sessionId: Long, distanceM: Int?, targetSizeCm: Int?): Int
+
     @Query("SELECT EXISTS(SELECT 1 FROM sessions WHERE fileName = :fileName)")
     suspend fun sessionExists(fileName: String): Boolean
 

@@ -113,6 +113,9 @@ class SessionRepository(db: ArcheryDatabase) {
     suspend fun updateSessionDate(sessionId: Long, dateMs: Long) =
         dao.updateSessionDate(sessionId, dateMs)
 
+    suspend fun updateDistanceTarget(sessionId: Long, distanceM: Int?, targetSizeCm: Int?) =
+        dao.updateDistanceTarget(sessionId, distanceM, targetSizeCm)
+
     suspend fun deleteSession(sessionId: Long) =
         dao.deleteSession(sessionId)
 
@@ -169,14 +172,18 @@ class SessionRepository(db: ArcheryDatabase) {
         displayName: String?,
         arrowsPerRound: Int,
         arrowData: List<List<Pair<ScoreZone, Float>?>>,
+        distanceM: Int? = null,
+        targetSizeCm: Int? = null,
     ): Long {
         val sessionId = dao.insertSession(
             SessionEntity(
-                fileName    = "manual_$dateMs",
-                filePath    = "",
-                dateMs      = dateMs,
-                durationSec = 0L,
-                displayName = displayName?.takeIf { it.isNotBlank() },
+                fileName      = "manual_$dateMs",
+                filePath      = "",
+                dateMs        = dateMs,
+                durationSec   = 0L,
+                displayName   = displayName?.takeIf { it.isNotBlank() },
+                distanceM     = distanceM,
+                targetSizeCm  = targetSizeCm,
             )
         )
         arrowData.forEachIndexed { idx, arrows ->
@@ -233,6 +240,8 @@ class SessionRepository(db: ArcheryDatabase) {
             isArchived = session.isArchived,
             displayName = session.displayName,
             analyticsLocked = session.analyticsLocked,
+            distanceM = session.distanceM,
+            targetSizeCm = session.targetSizeCm,
         )
     }
 

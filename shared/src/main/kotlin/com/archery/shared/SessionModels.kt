@@ -22,6 +22,10 @@ data class SessionSummary(
     val displayName: String? = null,
     /** True when the user has confirmed detection caught everything — suppresses re-run prompts. */
     val analyticsLocked: Boolean = false,
+    /** Shooting distance in metres; null if not set. */
+    val distanceM: Int? = null,
+    /** Target face diameter in cm; null if not set. */
+    val targetSizeCm: Int? = null,
 ) {
     val totalArrows: Int get() = rounds.sumOf { it.arrows.size }
     val totalNonDnsArrows: Int get() = rounds.sumOf { r -> r.arrows.count { it.zone != ScoreZone.DNS } }

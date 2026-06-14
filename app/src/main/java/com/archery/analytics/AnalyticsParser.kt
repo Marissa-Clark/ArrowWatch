@@ -4,6 +4,7 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 private const val DISMISSED_TAG = "DismissedShots"
@@ -188,31 +189,56 @@ fun saveManualShots(csvPath: String, manual: Map<Int, List<Float>>) {
  * compared to the normal detector threshold), bounded by ±[maxRadiusSec].  Returns null only
  * when there are no samples anywhere near [timeSec].
  */
+/**
+ * Synthesise a [DetectedShot] for a manually flagged tap at [timeSec].
+ *
+ * Uses the **same detrended-gz criterion** as the main detector so that manual
+ * and auto-detected hold times are measured the same way:
+ *   - Compute gzD = gz − 60-second centred rolling mean (identical to [AnalyticsParser.detectShots])
+ *   - Expand left/right from the tap sample while gzD ≥ [profile].gzMinDetrended
+ *   - [maxRadiusSec] is only a safety cap; expansion stops naturally at the gz edge
+ *   - If the tap lands outside the qualifying region (gzD < min), fall back to ±0.5 s
+ */
 fun synthesizeShotAt(
     timeSec: Float,
     sensorData: List<SensorSample>,
-    gzFloor: Float = 4.0f,
-    maxRadiusSec: Float = 4f,
+    profile: DetectionProfile = DEFAULT_PROFILE,
+    maxRadiusSec: Float = 3f,
 ): DetectedShot? {
     if (sensorData.isEmpty()) return null
+    val n = sensorData.size
 
-    // Find the index of the sample closest to the requested time
-    val centerIdx = sensorData.indices.minByOrNull { kotlin.math.abs(sensorData[it].time - timeSec) } ?: return null
+    // ── 1. Detrend gz: same 60-second centred rolling mean as detectShots ──
+    val halfDetrend = 30f
+    val gzPrefix = DoubleArray(n + 1)
+    for (i in 0 until n) gzPrefix[i + 1] = gzPrefix[i] + sensorData[i].gz
+    val gzD = FloatArray(n)
+    var dlo = 0; var dhi = 0
+    for (i in 0 until n) {
+        val t = sensorData[i].time
+        while (dlo < n && sensorData[dlo].time < t - halfDetrend) dlo++
+        while (dhi < n - 1 && sensorData[dhi + 1].time <= t + halfDetrend) dhi++
+        val winSize = (dhi - dlo + 1).coerceAtLeast(1)
+        gzD[i] = sensorData[i].gz - ((gzPrefix[dhi + 1] - gzPrefix[dlo]) / winSize).toFloat()
+    }
 
-    // Expand left while gz stays above floor and within radius
+    // ── 2. Find sample closest to tap ──
+    val centerIdx = sensorData.indices.minByOrNull { abs(sensorData[it].time - timeSec) } ?: return null
+    val gzMin = profile.gzMinDetrended
+
+    // ── 3. Expand while gzD ≥ min (same boundary rule as auto-detector) ──
     var lo = centerIdx
     while (lo > 0
-        && sensorData[lo - 1].gz >= gzFloor
+        && gzD[lo - 1] >= gzMin
         && sensorData[lo - 1].time >= timeSec - maxRadiusSec) lo--
 
-    // Expand right
     var hi = centerIdx
-    while (hi < sensorData.size - 1
-        && sensorData[hi + 1].gz >= gzFloor
+    while (hi < n - 1
+        && gzD[hi + 1] >= gzMin
         && sensorData[hi + 1].time <= timeSec + maxRadiusSec) hi++
 
-    // If center itself is below floor (very marginal shot), use a fixed ±0.5s window anyway
-    val window = if (sensorData[centerIdx].gz < gzFloor) {
+    // Fallback: tap is outside the qualifying region — use a fixed ±0.5 s window
+    val window = if (gzD[centerIdx] < gzMin) {
         sensorData.filter { it.time in (timeSec - 0.5f)..(timeSec + 0.5f) }
     } else {
         sensorData.subList(lo, hi + 1)
@@ -235,7 +261,7 @@ fun synthesizeShotAt(
         holdSec      = holdSec,
         nSamples     = window.size,
         gzMean       = gzMean,
-        gzStdev      = kotlin.math.sqrt(variance.toDouble()).toFloat(),
+        gzStdev      = sqrt(variance.toDouble()).toFloat(),
         sensorWindow = window,
         isManual     = true,
     )
