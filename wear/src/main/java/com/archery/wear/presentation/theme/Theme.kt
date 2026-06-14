@@ -6,9 +6,9 @@ import androidx.wear.compose.material.Colors
 import androidx.wear.compose.material.MaterialTheme
 
 // ── Backgrounds ──────────────────────────────────────────────────────────────
-val WatchBg            = Color(0xFF0F172A)
-val WatchSurface       = Color(0xFF1E293B)
-val WatchSurfaceLight  = Color(0xFF334155)
+val WatchBg            = Color(0xFF000000)   // pure black — fitness watch baseline
+val WatchSurface       = Color(0xFF111827)   // very dark surface
+val WatchSurfaceLight  = Color(0xFF1E293B)   // elevated surface
 
 // ── Text ─────────────────────────────────────────────────────────────────────
 val WatchTextPrimary   = Color(0xFFF1F5F9)
