@@ -47,7 +47,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.archery.shared.LiveArrow
 import com.archery.shared.LiveRound
 import com.archery.shared.ScoreZone
 import com.archery.shared.WatchPhase
@@ -872,5 +874,131 @@ private fun LiveZoneDistribution(zoneCounts: Map<ScoreZone, Int>) {
                 }
             }
         }
+    }
+}
+
+// ── Previews ─────────────────────────────────────────────────────────────────
+
+private val previewArrows3 = listOf(
+    LiveArrow(shotIndex = 1, quickZone = ScoreZone.GOLD),
+    LiveArrow(shotIndex = 2, quickZone = ScoreZone.RED),
+    LiveArrow(shotIndex = 3, quickZone = ScoreZone.BLUE),
+)
+
+private val previewCompletedRounds = listOf(
+    LiveRound(
+        number = 1, isComplete = true,
+        confirmedScore = 26f,
+        arrows = listOf(
+            LiveArrow(1, zone = ScoreZone.GOLD, score = 10f),
+            LiveArrow(2, zone = ScoreZone.GOLD, score = 9f),
+            LiveArrow(3, zone = ScoreZone.RED,  score = 7f),
+        ),
+    ),
+    LiveRound(
+        number = 2, isComplete = true,
+        confirmedScore = 21f,
+        arrows = listOf(
+            LiveArrow(1, zone = ScoreZone.BLUE,  score = 6f),
+            LiveArrow(2, zone = ScoreZone.RED,   score = 8f),
+            LiveArrow(3, zone = ScoreZone.BLACK, score = 4f),
+        ),
+    ),
+    LiveRound(
+        number = 3, isComplete = true,
+        confirmedScore = 28f,
+        arrows = listOf(
+            LiveArrow(1, zone = ScoreZone.GOLD, score = 10f),
+            LiveArrow(2, zone = ScoreZone.GOLD, score = 10f),
+            LiveArrow(3, zone = ScoreZone.RED,  score = 8f),
+        ),
+    ),
+)
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Shooting – no arrows yet")
+@Composable
+private fun PreviewShootingEmpty() {
+    ShootingPhaseView(
+        round = null,
+        arrowsPerRound = 3,
+        completedRounds = emptyList(),
+        onEnterScoring = {},
+        onEditArrow = { _, _, _, _ -> },
+    )
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Shooting – arrows detected + history")
+@Composable
+private fun PreviewShootingWithHistory() {
+    Column(Modifier.background(BgPage).padding(20.dp)) {
+        ShootingPhaseView(
+            round = LiveRound(number = 4, arrows = previewArrows3),
+            arrowsPerRound = 3,
+            completedRounds = previewCompletedRounds,
+            onEnterScoring = {},
+            onEditArrow = { _, _, _, _ -> },
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Scoring – unscored")
+@Composable
+private fun PreviewScoringUnscored() {
+    Column(Modifier.background(BgPage).padding(20.dp)) {
+        ScoringPhaseView(
+            round = LiveRound(
+                number = 4,
+                arrows = listOf(
+                    LiveArrow(shotIndex = 1),
+                    LiveArrow(shotIndex = 2),
+                    LiveArrow(shotIndex = 3),
+                ),
+            ),
+            roundNumber = 4,
+            arrowsPerRound = 3,
+            selectedArrow = 0,
+            onSelectArrow = {},
+            onScoreArrow = { _, _, _ -> },
+            onDone = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Scoring – partially scored")
+@Composable
+private fun PreviewScoringPartial() {
+    Column(Modifier.background(BgPage).padding(20.dp)) {
+        ScoringPhaseView(
+            round = LiveRound(
+                number = 4,
+                arrows = listOf(
+                    LiveArrow(shotIndex = 1, zone = ScoreZone.GOLD, score = 10f),
+                    LiveArrow(shotIndex = 2, zone = ScoreZone.RED,  score = 8f),
+                    LiveArrow(shotIndex = 3),
+                ),
+            ),
+            roundNumber = 4,
+            arrowsPerRound = 3,
+            selectedArrow = 2,
+            onSelectArrow = {},
+            onScoreArrow = { _, _, _ -> },
+            onDone = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Zone distribution")
+@Composable
+private fun PreviewZoneDistribution() {
+    Column(Modifier.background(BgPage).padding(20.dp)) {
+        LiveZoneDistribution(
+            mapOf(
+                ScoreZone.GOLD  to 7,
+                ScoreZone.RED   to 4,
+                ScoreZone.BLUE  to 3,
+                ScoreZone.BLACK to 1,
+                ScoreZone.MISS  to 1,
+            )
+        )
     }
 }
