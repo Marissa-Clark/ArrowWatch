@@ -41,6 +41,8 @@ import com.archery.wear.presentation.theme.WatchSurfaceLight
 import com.archery.wear.presentation.theme.WatchTextMuted
 import com.archery.wear.presentation.theme.WatchTextPrimary
 import com.archery.wear.presentation.theme.WatchTextSecondary
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.wear.tooling.preview.devices.WearDevices
 import kotlinx.coroutines.delay
 
 @Composable
@@ -210,5 +212,48 @@ fun ShootingScreen(
                 letterSpacing = 0.5.sp,
             )
         }
+    }
+}
+
+// ── Previews ─────────────────────────────────────────────────────────────────
+
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "Shooting – new round")
+@Composable
+private fun ShootingPreviewFresh() {
+    com.archery.wear.presentation.theme.ArcheryTheme {
+        ShootingScreen(
+            shotCount = 0,
+            arrowsPerRound = 3,
+            roundNumber = 1,
+            heartRate = 0f,
+            previousRoundInfo = null,
+            totalScore = 0f,
+            avgPerArrow = 0f,
+            walkingSteps = 0,
+            roundStartMs = 0L,
+            onEnterScoring = {},
+            onEndSession = {},
+        )
+    }
+}
+
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "Shooting – mid session")
+@Composable
+private fun ShootingPreviewMidSession() {
+    com.archery.wear.presentation.theme.ArcheryTheme {
+        ShootingScreen(
+            shotCount = 0,
+            arrowsPerRound = 3,
+            roundNumber = 4,
+            heartRate = 82f,
+            previousRoundInfo = "R3: 8.7 avg",
+            totalScore = 78f,
+            avgPerArrow = 8.7f,
+            walkingSteps = 0,
+            // Fixed offset so preview shows ~2:15 elapsed
+            roundStartMs = System.currentTimeMillis() - 135_000L,
+            onEnterScoring = {},
+            onEndSession = {},
+        )
     }
 }
