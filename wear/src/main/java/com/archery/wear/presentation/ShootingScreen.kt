@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -154,29 +156,31 @@ fun ShootingScreen(
         // ── Main layout ───────────────────────────────────────────────────────
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.Top,
         ) {
 
-            Spacer(modifier = Modifier.height(4.dp))
+            // Scoot END N down toward center
+            Spacer(modifier = Modifier.height(44.dp))
 
-            // ── TOP: End number ───────────────────────────────────────────────
+            // ── END number — bigger, bold ─────────────────────────────────────
             Text(
                 text = "END  $endNumber",
                 style = MetricStyle.copy(
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Normal,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
                     letterSpacing = 3.sp,
                     color = WatchTextSecondary,
                 ),
                 textAlign = TextAlign.Center,
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // ── CENTER: Score metrics ─────────────────────────────────────────
+            // ── Score metrics ─────────────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -239,13 +243,13 @@ fun ShootingScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // ── BOTTOM: Heart rate ────────────────────────────────────────────
+            // ── Heart rate — same visual weight as metrics ────────────────────
             Text(
                 text = if (heartRate > 0f) "${heartRate.toInt()}" else "—",
                 style = MetricStyle.copy(
-                    fontSize = 38.sp,
+                    fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (heartRate > 0f) WatchRed else WatchTextMuted,
                 ),
@@ -254,16 +258,17 @@ fun ShootingScreen(
             Text(
                 text = "BPM",
                 style = TextStyle(
-                    fontSize = 8.sp,
+                    fontSize = 7.sp,
                     fontWeight = FontWeight.Normal,
                     letterSpacing = 2.sp,
                     color = WatchTextMuted,
                 ),
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // ── Buttons — below the fold, swipe up to reach ───────────────────
+            Spacer(modifier = Modifier.height(36.dp))
 
-            // Score End — main action (crown forward also works)
+            // Score End (crown forward also works)
             Button(
                 onClick = onEnterScoring,
                 modifier = Modifier.fillMaxWidth(0.75f).height(28.dp),
@@ -280,9 +285,9 @@ fun ShootingScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // End session — small, danger-red
+            // End session — danger-red
             Button(
                 onClick = onEndSession,
                 modifier = Modifier.width(52.dp).height(22.dp),
@@ -298,6 +303,8 @@ fun ShootingScreen(
                     ),
                 )
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
 
         // ── Timer — top-right overlay ────────────────────────────────────────
