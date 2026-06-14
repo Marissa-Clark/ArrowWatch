@@ -38,8 +38,11 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.wear.tooling.preview.devices.WearDevices
 import com.archery.shared.ScoreZone
 import com.archery.wear.WatchRound
+import com.archery.wear.WatchShot
 import com.archery.wear.presentation.theme.WatchAmber
 import com.archery.wear.presentation.theme.WatchBg
 import com.archery.wear.presentation.theme.WatchBtnConfirm
@@ -254,6 +257,56 @@ private fun BigScoreButton(zone: ScoreZone, selected: Boolean = false, onClick: 
         contentAlignment = Alignment.Center,
     ) {
         Text(text = zone.label.take(1), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = textColor)
+    }
+}
+
+// ── Previews ─────────────────────────────────────────────────────────────────
+
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "Score – unscored arrows")
+@Composable
+private fun ScorePreviewUnscored() {
+    com.archery.wear.presentation.theme.ArcheryTheme {
+        ScoreScreen(
+            round = WatchRound(
+                number = 2,
+                shots = listOf(
+                    WatchShot(number = 1),
+                    WatchShot(number = 2),
+                    WatchShot(number = 3),
+                ),
+            ),
+            onScoreArrow = { _, _ -> },
+            onAddArrow = {},
+            onRemoveArrow = {},
+            onSetTotal = {},
+            onFinish = {},
+            onSkip = {},
+            onCancelScoring = {},
+        )
+    }
+}
+
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "Score – partially scored")
+@Composable
+private fun ScorePreviewPartial() {
+    com.archery.wear.presentation.theme.ArcheryTheme {
+        ScoreScreen(
+            round = WatchRound(
+                number = 2,
+                shots = listOf(
+                    WatchShot(number = 1, finalZone = ScoreZone.GOLD),
+                    WatchShot(number = 2, finalZone = ScoreZone.RED),
+                    WatchShot(number = 3),
+                ),
+            ),
+            onScoreArrow = { _, _ -> },
+            onAddArrow = {},
+            onRemoveArrow = {},
+            onSetTotal = {},
+            onFinish = {},
+            onSkip = {},
+            onCancelScoring = {},
+        )
     }
 }
 
