@@ -19,13 +19,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.archery.shared.ScoreZone
+import com.archery.ui.theme.*
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -54,18 +59,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 // ── Color palette ─────────────────────────────────────────────────────────────
-
-private val LsBg          = Color(0xFFF8FAFC)
-private val LsHeaderDark  = Color(0xFF1E293B)
-private val LsHeaderDkr   = Color(0xFF0F172A)
-private val LsTextPrimary = Color(0xFF1E293B)
-private val LsTextSec     = Color(0xFF475569)
-private val LsTextMuted   = Color(0xFF94A3B8)
-private val LsBorder      = Color(0xFFE2E8F0)
-private val LsCyan600     = Color(0xFF0891B2)
-private val LsCyan800     = Color(0xFF155E75)
-private val LsAmber600    = Color(0xFFD97706)
-private val LsKbBg        = Color(0xFFF1F5F9)  // keyboard panel background
 
 // Per-zone button colors matching live scoring screen
 private val ZONE_BTN_BG = mapOf(
@@ -141,10 +134,11 @@ fun LogSessionScreen(
     var nameText   by remember { mutableStateOf("") }
     var roundCount     by remember { mutableIntStateOf(6) }
     var arrowsPerRound by remember { mutableIntStateOf(3) }
+    var distanceMText    by remember { mutableStateOf("") }
+    var targetSizeCmText by remember { mutableStateOf("") }
 
     // Date picker dialog state
     var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dateMs)
 
     // Arrow scores: (roundIdx, arrowIdx) → (zone, score)
     val arrowScores = remember { mutableStateMapOf<Pair<Int, Int>, Pair<ScoreZone, Float>>() }
@@ -176,8 +170,10 @@ fun LogSessionScreen(
         }
     }
 
-    // ── Date picker dialog ────────────────────────────────────────────────────
+    // ── Date picker dialog ─────────────────────────────────────────────────────
+    // State is created fresh each time the dialog opens so it always reflects dateMs.
     if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dateMs)
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton    = {
@@ -210,7 +206,8 @@ fun LogSessionScreen(
                     val data = (0 until roundCount).map { r ->
                         (0 until arrowsPerRound).map { a -> getScore(r, a) }
                     }
-                    vm.save(dateMs, nameText.ifBlank { null }, arrowsPerRound, data) { id ->
+                    vm.save(dateMs, nameText.ifBlank { null }, arrowsPerRound, data,
+                        distanceMText.toIntOrNull(), targetSizeCmText.toIntOrNull()) { id ->
                         onSaved(id)
                     }
                 },
@@ -222,14 +219,14 @@ fun LogSessionScreen(
             Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(LsBg)
+                .background(AppBgPage)
                 .verticalScroll(rememberScrollState()),
         ) {
             // ── Header ────────────────────────────────────────────────────────
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(LsHeaderDkr, LsHeaderDark)))
+                    .background(Brush.verticalGradient(listOf(AppHeaderDarker, AppHeaderDark)))
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 Row(
@@ -260,42 +257,42 @@ fun LogSessionScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     // Date chip — taps open date picker
                     Column(Modifier.weight(1f)) {
-                        Text("Date", fontSize = 11.sp, color = LsTextMuted)
+                        Text("Date", fontSize = 11.sp, color = AppTextMuted)
                         Spacer(Modifier.height(3.dp))
                         Box(
                             Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(LsBg)
-                                .border(1.dp, LsBorder, RoundedCornerShape(8.dp))
+                                .background(AppBgPage)
+                                .border(1.dp, AppBorderLight, RoundedCornerShape(8.dp))
                                 .clickable { showDatePicker = true }
                                 .padding(horizontal = 12.dp, vertical = 11.dp),
                         ) {
-                            Text(dateLabel, fontSize = 15.sp, color = LsTextPrimary, fontWeight = FontWeight.Medium)
+                            Text(dateLabel, fontSize = 15.sp, color = AppHeaderDark, fontWeight = FontWeight.Medium)
                         }
                     }
                     // Name field
                     Column(Modifier.weight(1f)) {
-                        Text("Name (optional)", fontSize = 11.sp, color = LsTextMuted)
+                        Text("Name (optional)", fontSize = 11.sp, color = AppTextMuted)
                         Spacer(Modifier.height(3.dp))
                         Box(
                             Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(LsBg)
-                                .border(1.dp, LsBorder, RoundedCornerShape(8.dp))
+                                .background(AppBgPage)
+                                .border(1.dp, AppBorderLight, RoundedCornerShape(8.dp))
                                 .padding(horizontal = 12.dp, vertical = 11.dp),
                         ) {
                             androidx.compose.foundation.text.BasicTextField(
                                 value = nameText,
                                 onValueChange = { nameText = it },
                                 textStyle = androidx.compose.ui.text.TextStyle(
-                                    fontSize = 15.sp, color = LsTextPrimary,
+                                    fontSize = 15.sp, color = AppHeaderDark,
                                 ),
                                 singleLine = true,
                                 decorationBox = { inner ->
                                     if (nameText.isEmpty()) {
-                                        Text("Session name", fontSize = 15.sp, color = LsTextMuted)
+                                        Text("Session name", fontSize = 15.sp, color = AppTextMuted)
                                     }
                                     inner()
                                 },
@@ -305,12 +302,57 @@ fun LogSessionScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StepperField("Rounds",        roundCount,     onDecrement = { if (roundCount > 1) roundCount-- },        onIncrement = { if (roundCount < 30) roundCount++ },        modifier = Modifier.weight(1f))
-                    StepperField("Arrows / round", arrowsPerRound, onDecrement = { if (arrowsPerRound > 1) arrowsPerRound-- }, onIncrement = { if (arrowsPerRound < 20) arrowsPerRound++ }, modifier = Modifier.weight(1f))
+                    StepperField(
+                        label       = "Rounds",
+                        value       = roundCount,
+                        onDecrement = { if (roundCount > 1) roundCount-- },
+                        onIncrement = { if (roundCount < 30) roundCount++ },
+                        modifier    = Modifier.weight(1f),
+                    )
+                    StepperField(
+                        label       = "Arrows / round",
+                        value       = arrowsPerRound,
+                        onDecrement = { if (arrowsPerRound > 1) arrowsPerRound-- },
+                        onIncrement = { if (arrowsPerRound < 20) arrowsPerRound++ },
+                        modifier    = Modifier.weight(1f),
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value         = distanceMText,
+                        onValueChange = { distanceMText = it.filter { c -> c.isDigit() } },
+                        label         = { Text("Distance (m)", fontSize = 11.sp) },
+                        placeholder   = { Text("e.g. 18", fontSize = 13.sp, color = AppTextMuted) },
+                        singleLine    = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors        = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor   = AppCyan600,
+                            unfocusedBorderColor = AppBorderLight,
+                            focusedLabelColor    = AppCyan600,
+                            unfocusedLabelColor  = AppTextMuted,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value         = targetSizeCmText,
+                        onValueChange = { targetSizeCmText = it.filter { c -> c.isDigit() } },
+                        label         = { Text("Target (cm)", fontSize = 11.sp) },
+                        placeholder   = { Text("e.g. 80", fontSize = 13.sp, color = AppTextMuted) },
+                        singleLine    = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors        = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor   = AppCyan600,
+                            unfocusedBorderColor = AppBorderLight,
+                            focusedLabelColor    = AppCyan600,
+                            unfocusedLabelColor  = AppTextMuted,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
 
-            Box(Modifier.fillMaxWidth().height(1.dp).background(LsBorder))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(AppBorderLight))
 
             // ── Round cards ───────────────────────────────────────────────────
             Column(
@@ -352,7 +394,7 @@ private fun ScoreKeyboard(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(LsKbBg)
+            .background(AppSlate100)
             .navigationBarsPadding()
             .padding(horizontal = 10.dp)
             .padding(top = 8.dp, bottom = 10.dp),
@@ -366,14 +408,14 @@ private fun ScoreKeyboard(
         ) {
             Text(
                 "Round ${selRound + 1}  ·  Arrow ${selArrow + 1} of $arrowsPerRound",
-                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = LsTextSec,
+                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = AppTextSecondary,
             )
             Box(
                 Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(
-                        if (canSave) Brush.horizontalGradient(listOf(LsCyan600, LsCyan800))
-                        else Brush.horizontalGradient(listOf(LsTextMuted, LsTextMuted)),
+                        if (canSave) Brush.horizontalGradient(listOf(AppCyan600, AppCyan800))
+                        else Brush.horizontalGradient(listOf(AppTextMuted, AppTextMuted)),
                     )
                     .clickable(enabled = canSave) { onSave() }
                     .padding(horizontal = 18.dp, vertical = 8.dp),
@@ -463,30 +505,85 @@ private fun StepperField(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, fontSize = 11.sp, color = LsTextMuted)
+        Text(label, fontSize = 11.sp, color = AppTextMuted)
         Spacer(Modifier.height(3.dp))
         Row(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
-                .border(1.dp, LsBorder, RoundedCornerShape(8.dp))
-                .background(LsBg),
+                .border(1.dp, AppBorderLight, RoundedCornerShape(8.dp))
+                .background(AppBgPage),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                "−", fontSize = 20.sp, color = LsTextSec,
+                "−", fontSize = 20.sp, color = AppTextSecondary,
                 modifier = Modifier
                     .clickable { onDecrement() }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             )
-            Text(value.toString(), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = LsTextPrimary)
+            Text(value.toString(), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AppHeaderDark)
             Text(
-                "+", fontSize = 20.sp, color = LsTextSec,
+                "+", fontSize = 20.sp, color = AppTextSecondary,
                 modifier = Modifier
                     .clickable { onIncrement() }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             )
+        }
+    }
+}
+
+// ── Nullable stepper (for optional Int? fields) ───────────────────────────────
+
+@Composable
+private fun NullableStepperField(
+    label: String,
+    value: Int?,
+    step: Int?,
+    onDecrement: () -> Unit,
+    onIncrement: () -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, fontSize = 11.sp, color = AppTextMuted)
+        Spacer(Modifier.height(3.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .border(1.dp, AppBorderLight, RoundedCornerShape(8.dp))
+                .background(AppBgPage),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "−", fontSize = 20.sp, color = AppTextSecondary,
+                modifier = Modifier
+                    .clickable { onDecrement() }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+            Text(
+                value?.toString() ?: "—",
+                fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                color = if (value != null) AppHeaderDark else AppTextMuted,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (value != null) {
+                    Text(
+                        "✕", fontSize = 13.sp, color = AppTextMuted,
+                        modifier = Modifier
+                            .clickable { onClear() }
+                            .padding(horizontal = 6.dp, vertical = 10.dp),
+                    )
+                }
+                Text(
+                    "+", fontSize = 20.sp, color = AppTextSecondary,
+                    modifier = Modifier
+                        .clickable { onIncrement() }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                )
+            }
         }
     }
 }
@@ -512,7 +609,7 @@ private fun RoundCard(
             .background(Color.White)
             .border(
                 width = if (isActiveRound) 1.5.dp else 1.dp,
-                color = if (isActiveRound) LsCyan600.copy(alpha = 0.5f) else LsBorder,
+                color = if (isActiveRound) AppCyan600.copy(alpha = 0.5f) else AppBorderLight,
                 shape = RoundedCornerShape(10.dp),
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -521,10 +618,10 @@ private fun RoundCard(
     ) {
         // Round label
         Column(Modifier.width(54.dp)) {
-            Text("Round", fontSize = 10.sp, color = LsTextMuted)
+            Text("Round", fontSize = 10.sp, color = AppTextMuted)
             Text(
                 "${roundIndex + 1}",
-                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = LsTextPrimary,
+                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AppHeaderDark,
             )
         }
 
@@ -540,17 +637,17 @@ private fun RoundCard(
                 val isSel  = aIdx == selArrow
                 val zone   = scored?.first
                 val bg     = if (zone != null) (ZONE_CHIP_BG[zone]   ?: Color.White)   else Color(0xFFF1F5F9)
-                val fg     = if (zone != null) (ZONE_CHIP_FG[zone]   ?: LsTextPrimary) else LsTextMuted
+                val fg     = if (zone != null) (ZONE_CHIP_FG[zone]   ?: AppHeaderDark) else AppTextMuted
                 Box(
                     Modifier
                         .size(42.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSel) LsCyan600.copy(alpha = 0.12f) else bg)
+                        .background(if (isSel) AppCyan600.copy(alpha = 0.12f) else bg)
                         .border(
                             width = if (isSel) 2.dp else 1.dp,
-                            color = if (isSel) LsCyan600
+                            color = if (isSel) AppCyan600
                                     else if (zone != null) fg.copy(alpha = 0.5f)
-                                    else LsBorder,
+                                    else AppBorderLight,
                             shape = RoundedCornerShape(8.dp),
                         )
                         .clickable { onArrowTap(aIdx) },
@@ -562,7 +659,7 @@ private fun RoundCard(
                         }
                         Text(display, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = fg)
                     } else {
-                        Text("·", fontSize = 18.sp, color = LsTextMuted)
+                        Text("·", fontSize = 18.sp, color = AppTextMuted)
                     }
                 }
             }
@@ -571,14 +668,14 @@ private fun RoundCard(
         // Total
         Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(42.dp)) {
-            Text("total", fontSize = 10.sp, color = LsTextMuted)
+            Text("total", fontSize = 10.sp, color = AppTextMuted)
             if (entered > 0) {
                 Text(
                     "%.0f".format(total),
-                    fontSize = 18.sp, fontWeight = FontWeight.Bold, color = LsAmber600,
+                    fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppAmber600,
                 )
             } else {
-                Text("—", fontSize = 16.sp, color = LsTextMuted)
+                Text("—", fontSize = 16.sp, color = AppTextMuted)
             }
         }
     }

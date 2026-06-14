@@ -74,6 +74,7 @@ fun ScoreScreen(
     onSetTotal: (Float) -> Unit,
     onFinish: () -> Unit,
     onSkip: () -> Unit,
+    onCancelScoring: () -> Unit = {},
 ) {
     val totalArrows = round?.shots?.size ?: 0
     val focusRequester = remember { FocusRequester() }
@@ -110,9 +111,9 @@ fun ScoreScreen(
                 .fillMaxSize()
                 .background(WatchBg)
                 .onRotaryScrollEvent { event ->
-                    val delta = if (event.verticalScrollPixels > 0) 1 else -1
-                    if (totalArrows > 0) currentArrow = (currentArrow + delta).coerceIn(0, totalArrows - 1)
-                    true
+                    // Crown forward → finish round; crown backward → cancel back to shooting
+                    if (event.verticalScrollPixels > 0) { onFinish(); true }
+                    else { onCancelScoring(); true }
                 }
                 .focusRequester(focusRequester)
                 .focusable(),

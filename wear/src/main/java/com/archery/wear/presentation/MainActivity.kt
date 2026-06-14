@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
             }
 
             val walkingSteps by viewModel.walkingSteps.collectAsState()
+            val roundStartMs by viewModel.roundStartMs.collectAsState()
             val isApprox = session?.isScoreApprox ?: false
 
             ArcheryTheme {
@@ -115,6 +116,7 @@ class MainActivity : ComponentActivity() {
                         avgPerArrow = session?.avgPerArrow ?: 0f,
                         walkingSteps = walkingSteps,
                         isApprox = isApprox,
+                        roundStartMs = roundStartMs,
                         onEnterScoring = viewModel::enterScoring,
                         onEndSession = viewModel::endSession,
                     )
@@ -126,6 +128,7 @@ class MainActivity : ComponentActivity() {
                         onSetTotal = viewModel::setRoundTotal,
                         onFinish = viewModel::finishScoring,
                         onSkip = viewModel::skipScoring,
+                        onCancelScoring = viewModel::cancelScoring,
                     )
                     WatchPhase.SUMMARY -> SummaryScreen(
                         session = session,

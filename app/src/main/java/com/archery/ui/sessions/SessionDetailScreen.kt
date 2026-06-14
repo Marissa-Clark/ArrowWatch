@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.archery.shared.RoundSummary
 import com.archery.shared.ScoreZone
 import androidx.compose.ui.platform.LocalConfiguration
+import com.archery.ui.theme.*
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
@@ -65,38 +68,19 @@ import java.time.format.DateTimeFormatter
 
 // ═══════════════ COLORS ═══════════════
 
-private val ABgPage        = Color(0xFFF8FAFC)
 private val ABgWhite       = Color.White
-private val AHeaderDark    = Color(0xFF1E293B)
-private val AHeaderDarker  = Color(0xFF0F172A)
-private val ATextPrimary   = Color(0xFF1E293B)
-private val ATextSecondary = Color(0xFF475569)
-private val ATextMuted     = Color(0xFF94A3B8)
-private val ATextSlate300  = Color(0xFFCBD5E1)
-private val ACyan400       = Color(0xFF22D3EE)
-private val ACyan600       = Color(0xFF0891B2)
-private val ACyan100       = Color(0xFFCFFAFE)
-private val ACyan800       = Color(0xFF155E75)
-private val AAmber600      = Color(0xFFD97706)
-private val AAmber100      = Color(0xFFFEF3C7)
 private val ARed500        = Color(0xFFEF4444)
 private val ARed700        = Color(0xFFB91C1C)
 private val ARed800        = Color(0xFF991B1B)
-private val ABorderLight   = Color(0xFFE2E8F0)
-private val ASlate100      = Color(0xFFF1F5F9)
-private val AAmber800      = Color(0xFF92400E)
 private val ACyan50        = Color(0xFFECFEFF)
-private val ABgSlate100    = Color(0xFFF1F5F9)
 private val ARed50         = Color(0xFFFEF2F2)
 private val ARed100        = Color(0xFFFEE2E2)
 private val AAmber50       = Color(0xFFFFFBEB)
-private val AAmber700      = Color(0xFFB45309)
 private val ASlate700      = Color(0xFF334155)
 private val ASlate600      = Color(0xFF475569)
 private val ACyanBorder    = Color(0xFFA5F3FC).copy(alpha = 0.6f)
 private val AAmberBorder   = Color(0xFFFDE68A).copy(alpha = 0.6f)
 private val ARedBorder     = Color(0xFFFECACA).copy(alpha = 0.6f)
-private val AHrPink        = Color(0xFFEC4899)
 
 private fun zoneForScore(score: Float): ScoreZone = when {
     score >= 9f -> ScoreZone.GOLD
@@ -123,22 +107,25 @@ fun SessionDetailScreen(
     LaunchedEffect(sessionId) { vm.load(sessionId) }
 
     val session by vm.session.collectAsState()
-    var showDeleteDialog   by remember { mutableStateOf(false) }
-    var showRenameDialog   by remember { mutableStateOf(false) }
-    var showDatePicker     by remember { mutableStateOf(false) }
+    var showDeleteDialog       by remember { mutableStateOf(false) }
+    var showRenameDialog       by remember { mutableStateOf(false) }
+    var showDatePicker         by remember { mutableStateOf(false) }
+    var showDistanceDialog     by remember { mutableStateOf(false) }
     var renameText by remember(session?.displayName) { mutableStateOf(session?.displayName ?: "") }
+    var editDistanceMText    by remember(session?.distanceM)    { mutableStateOf(session?.distanceM?.toString() ?: "") }
+    var editTargetSizeCmText by remember(session?.targetSizeCm) { mutableStateOf(session?.targetSizeCm?.toString() ?: "") }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy  h:mm a")
 
-    // Date picker — initialise from the current session date each time dialog opens
+    // Date picker — fresh state each time the dialog opens so it always reflects the session date.
     val currentDateMs = remember(session?.date) {
         session?.date?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
             ?: System.currentTimeMillis()
     }
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = currentDateMs)
 
     if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = currentDateMs)
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton    = {
@@ -158,6 +145,44 @@ fun SessionDetailScreen(
         }
     }
 
+    if (showDistanceDialog) {
+        AlertDialog(
+            onDismissRequest = { showDistanceDialog = false },
+            title   = { Text("Distance & Target") },
+            text    = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value         = editDistanceMText,
+                        onValueChange = { editDistanceMText = it.filter { c -> c.isDigit() } },
+                        label         = { Text("Distance (m)") },
+                        placeholder   = { Text("e.g. 18") },
+                        singleLine    = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier      = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value         = editTargetSizeCmText,
+                        onValueChange = { editTargetSizeCmText = it.filter { c -> c.isDigit() } },
+                        label         = { Text("Target face (cm)") },
+                        placeholder   = { Text("e.g. 80") },
+                        singleLine    = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier      = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.updateDistanceTarget(editDistanceMText.toIntOrNull(), editTargetSizeCmText.toIntOrNull())
+                    showDistanceDialog = false
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDistanceDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     // Analytics are loaded + cached by the ViewModel (AnalyticsCache) — instant on revisit.
     val sessionAnalytics by vm.analytics.collectAsState()
     val isAnalyticsLoading by vm.isAnalyticsLoading.collectAsState()
@@ -172,12 +197,12 @@ fun SessionDetailScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().background(ABgPage).verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize().background(AppBgPage).verticalScroll(rememberScrollState())
     ) {
         // ── Dark gradient header ──
         Box(
             Modifier.fillMaxWidth()
-                .background(Brush.horizontalGradient(listOf(AHeaderDark, AHeaderDarker)))
+                .background(Brush.horizontalGradient(listOf(AppHeaderDark, AppHeaderDarker)))
                 .padding(start = 20.dp, end = 20.dp, top = statusBarTop + 12.dp, bottom = 24.dp)
         ) {
             Column {
@@ -186,25 +211,25 @@ fun SessionDetailScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Back", fontSize = 14.sp, color = ATextSlate300,
+                    Text("Back", fontSize = 14.sp, color = AppTextSlate300,
                         modifier = Modifier.clickable { onBack() }.padding(vertical = 4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         when {
                             hasAnalytics -> Text(
-                                "Analytics", fontSize = 14.sp, color = ACyan400,
+                                "Analytics", fontSize = 14.sp, color = AppCyan400,
                                 modifier = Modifier.clickable { onAnalyticsClick() }
                                     .padding(vertical = 4.dp),
                             )
                             isAnalyticsLoading -> Text(
                                 "Analyzing…", fontSize = 14.sp,
-                                color = ATextMuted.copy(alpha = 0.7f),
+                                color = AppTextMuted.copy(alpha = 0.7f),
                                 modifier = Modifier.padding(vertical = 4.dp),
                             )
                         }
                         session?.let { s ->
                             Text(
                                 if (s.isArchived) "Unarchive" else "Archive",
-                                fontSize = 14.sp, color = ATextSlate300,
+                                fontSize = 14.sp, color = AppTextSlate300,
                                 modifier = Modifier.clickable { vm.archive(!s.isArchived) }
                                     .padding(vertical = 4.dp))
                         }
@@ -222,7 +247,7 @@ fun SessionDetailScreen(
                         session?.displayName ?: "Practice Session",
                         fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White,
                     )
-                    Text("✏", fontSize = 16.sp, color = ATextSlate300,
+                    Text("✏", fontSize = 16.sp, color = AppTextSlate300,
                         modifier = Modifier
                             .clickable {
                                 renameText = session?.displayName ?: ""
@@ -236,8 +261,25 @@ fun SessionDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.clickable { showDatePicker = true },
                 ) {
-                    Text(session?.date?.format(formatter) ?: "", fontSize = 14.sp, color = ATextSlate300)
-                    Text("✏", fontSize = 12.sp, color = ATextSlate300.copy(alpha = 0.6f))
+                    Text(session?.date?.format(formatter) ?: "", fontSize = 14.sp, color = AppTextSlate300)
+                    Text("✏", fontSize = 12.sp, color = AppTextSlate300.copy(alpha = 0.6f))
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.clickable {
+                        editDistanceMText    = session?.distanceM?.toString() ?: ""
+                        editTargetSizeCmText = session?.targetSizeCm?.toString() ?: ""
+                        showDistanceDialog = true
+                    },
+                ) {
+                    val distStr   = session?.distanceM?.let { "${it}m" }
+                    val targetStr = session?.targetSizeCm?.let { "${it}cm target" }
+                    val label     = listOfNotNull(distStr, targetStr).joinToString("  ·  ")
+                        .ifBlank { "Set distance & target" }
+                    Text(label, fontSize = 13.sp, color = AppTextSlate300.copy(alpha = 0.75f))
+                    Text("✏", fontSize = 11.sp, color = AppTextSlate300.copy(alpha = 0.45f))
                 }
             }
         }
@@ -245,7 +287,7 @@ fun SessionDetailScreen(
         val s = session
         if (s == null) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text("Loading…", color = ATextMuted)
+                Text("Loading…", color = AppTextMuted)
             }
             return@Column
         }
@@ -259,31 +301,31 @@ fun SessionDetailScreen(
             val avgHr = s.avgHeartRate
 
             Text("Session Overview", fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
-                color = ATextPrimary)
+                color = AppHeaderDark)
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatCard(
                     modifier = Modifier.weight(1f),
-                    bgStart = ACyan50, bgEnd = ACyan100.copy(0.5f), borderColor = ACyanBorder,
-                    iconBg = ACyan600, iconText = "R",
-                    label = "Rounds", labelColor = ACyan800,
+                    bgStart = ACyan50, bgEnd = AppCyan100.copy(0.5f), borderColor = ACyanBorder,
+                    iconBg = AppCyan600, iconText = "R",
+                    label = "Rounds", labelColor = AppCyan800,
                     value = "${s.rounds.size}",
-                    subtitle = "$totalArrows arrows total", subtitleColor = ACyan800.copy(0.8f),
+                    subtitle = "$totalArrows arrows total", subtitleColor = AppCyan800.copy(0.8f),
                 )
                 StatCard(
                     modifier = Modifier.weight(1f),
-                    bgStart = AAmber50, bgEnd = AAmber100.copy(0.5f), borderColor = AAmberBorder,
-                    iconBg = AAmber600, iconText = "S",
-                    label = "Total Score", labelColor = AAmber800,
+                    bgStart = AAmber50, bgEnd = AppAmber100.copy(0.5f), borderColor = AAmberBorder,
+                    iconBg = AppAmber600, iconText = "S",
+                    label = "Total Score", labelColor = AppAmber800,
                     value = if (totalScore > 0) fmtScore(totalScore) else "—",
-                    subtitle = "points earned", subtitleColor = AAmber700,
+                    subtitle = "points earned", subtitleColor = AppAmber700,
                 )
             }
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatCard(
                     modifier = Modifier.weight(1f),
-                    bgStart = ABgSlate100.copy(0.5f), bgEnd = ABgSlate100, borderColor = ABorderLight,
+                    bgStart = AppSlate100.copy(0.5f), bgEnd = AppSlate100, borderColor = AppBorderLight,
                     iconBg = ASlate700, iconText = "A",
                     label = "Avg Arrow", labelColor = ASlate700,
                     value = if (avgArrow > 0) "%.1f".format(avgArrow) else "—",
@@ -307,7 +349,7 @@ fun SessionDetailScreen(
             var editingRound by remember { mutableStateOf<Int?>(null) }
 
             Text("Round Details", fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
-                color = ATextPrimary)
+                color = AppHeaderDark)
             Spacer(Modifier.height(12.dp))
 
             RoundDetailsTable(
@@ -329,7 +371,7 @@ fun SessionDetailScreen(
             Spacer(Modifier.height(8.dp))
             CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
                 Box(
-                    Modifier.clip(RoundedCornerShape(6.dp)).background(ACyan600)
+                    Modifier.clip(RoundedCornerShape(6.dp)).background(AppCyan600)
                         .clickable { showInsertDialog = true }
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
@@ -353,19 +395,19 @@ fun SessionDetailScreen(
                     text = {
                         Column {
                             Text("Choose where to insert a new round:",
-                                fontSize = 14.sp, color = ATextSecondary)
+                                fontSize = 14.sp, color = AppTextSecondary)
                             Spacer(Modifier.height(12.dp))
                             Box(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
-                                    .background(ASlate100)
+                                    .background(AppSlate100)
                                     .clickable { vm.insertRoundAfter(0); showInsertDialog = false }
                                     .padding(vertical = 10.dp, horizontal = 12.dp)
-                            ) { Text("Before Round 1", fontSize = 14.sp, color = ATextPrimary) }
+                            ) { Text("Before Round 1", fontSize = 14.sp, color = AppHeaderDark) }
                             s.rounds.forEach { round ->
                                 Spacer(Modifier.height(6.dp))
                                 Box(
                                     Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
-                                        .background(ASlate100)
+                                        .background(AppSlate100)
                                         .clickable {
                                             vm.insertRoundAfter(round.number)
                                             showInsertDialog = false
@@ -373,7 +415,7 @@ fun SessionDetailScreen(
                                         .padding(vertical = 10.dp, horizontal = 12.dp)
                                 ) {
                                     Text("After Round ${round.number}", fontSize = 14.sp,
-                                        color = ATextPrimary)
+                                        color = AppHeaderDark)
                                 }
                             }
                         }
@@ -398,8 +440,8 @@ fun SessionDetailScreen(
                     placeholder = { Text("Practice Session") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = ACyan600,
-                        unfocusedBorderColor = ABorderLight,
+                        focusedBorderColor = AppCyan600,
+                        unfocusedBorderColor = AppBorderLight,
                     ),
                 )
             },
@@ -407,7 +449,7 @@ fun SessionDetailScreen(
                 TextButton(onClick = {
                     vm.rename(renameText)
                     showRenameDialog = false
-                }) { Text("Save", color = ACyan600) }
+                }) { Text("Save", color = AppCyan600) }
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") }
@@ -461,7 +503,7 @@ private fun StatCard(
                 Text(label, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = labelColor)
             }
             Spacer(Modifier.height(6.dp))
-            Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = ATextPrimary)
+            Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AppHeaderDark)
             Spacer(Modifier.height(2.dp))
             Text(subtitle, fontSize = 11.sp, color = subtitleColor)
         }
@@ -492,7 +534,7 @@ private fun ZoneDistributionCard(zoneCounts: Map<ScoreZone, Int>) {
         shape = RoundedCornerShape(10.dp)) {
         Column(Modifier.padding(14.dp)) {
             Text("Zone Distribution", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                color = ATextPrimary)
+                color = AppHeaderDark)
             Spacer(Modifier.height(8.dp))
             // Count numbers above bar
             Row(Modifier.fillMaxWidth()) {
@@ -501,7 +543,7 @@ private fun ZoneDistributionCard(zoneCounts: Map<ScoreZone, Int>) {
                     Text(
                         text = "$count",
                         fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                        color = zoneUiColors[zone] ?: ATextMuted,
+                        color = zoneUiColors[zone] ?: AppTextMuted,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.weight(count.toFloat() / total),
                     )
@@ -513,7 +555,7 @@ private fun ZoneDistributionCard(zoneCounts: Map<ScoreZone, Int>) {
                 activeZones.forEach { zone ->
                     val count = zoneCounts[zone] ?: 0
                     Box(Modifier.weight(count.toFloat() / total).fillMaxSize()
-                        .background(zoneUiColors[zone] ?: ATextMuted))
+                        .background(zoneUiColors[zone] ?: AppTextMuted))
                 }
             }
         }
@@ -557,30 +599,30 @@ private fun RoundDetailsTable(
                     // Header row
                     Row(
                         Modifier.fillMaxWidth()
-                            .background(ABorderLight.copy(0.5f))
+                            .background(AppBorderLight.copy(0.5f))
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("Round", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                            color = ATextSecondary, modifier = Modifier.width(rnW))
+                            color = AppTextSecondary, modifier = Modifier.width(rnW))
                         if (hasArrows && maxArrows > 0) {
                             for (a in 1..maxArrows) {
                                 Text("A$a", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                                    color = ATextSecondary, textAlign = TextAlign.Center,
+                                    color = AppTextSecondary, textAlign = TextAlign.Center,
                                     modifier = Modifier.width(arW))
                             }
                         }
                         Text("Total", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                            color = ATextSecondary, textAlign = TextAlign.Center,
+                            color = AppTextSecondary, textAlign = TextAlign.Center,
                             modifier = Modifier.width(totW))
                         Text("HR", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                            color = ATextSecondary, textAlign = TextAlign.Center,
+                            color = AppTextSecondary, textAlign = TextAlign.Center,
                             modifier = Modifier.width(hrW))
                         Text("Hold", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                            color = ATextSecondary, textAlign = TextAlign.Center,
+                            color = AppTextSecondary, textAlign = TextAlign.Center,
                             modifier = Modifier.width(holdW))
                         Text("Avg.", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                            color = ATextSecondary, textAlign = TextAlign.Center,
+                            color = AppTextSecondary, textAlign = TextAlign.Center,
                             modifier = Modifier.width(avgW))
                         Spacer(Modifier.weight(1f))
                     }
@@ -594,10 +636,10 @@ private fun RoundDetailsTable(
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .then(if (isEditing) Modifier.background(ACyan100.copy(0.3f)) else Modifier)
+                                .then(if (isEditing) Modifier.background(AppCyan100.copy(0.3f)) else Modifier)
                                 .then(if (showDivider) Modifier.border(
                                     0.5.dp,
-                                    if (isEditing) ACyan600 else ABorderLight.copy(0.5f),
+                                    if (isEditing) AppCyan600 else AppBorderLight.copy(0.5f),
                                     RoundedCornerShape(0.dp)
                                 ) else Modifier)
                                 .clickable { onRoundClick(round.number) }
@@ -608,7 +650,7 @@ private fun RoundDetailsTable(
                             Box(Modifier.width(rnW)) {
                                 Box(
                                     Modifier.size(28.dp).background(
-                                        if (isEditing) ACyan600 else ATextPrimary, CircleShape
+                                        if (isEditing) AppCyan600 else AppHeaderDark, CircleShape
                                     ),
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -630,7 +672,7 @@ private fun RoundDetailsTable(
                                         text = cellText,
                                         fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                                         color = if (arrow != null && arrow.zone != ScoreZone.DNS)
-                                            ATextSecondary else ATextMuted,
+                                            AppTextSecondary else AppTextMuted,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.width(arW),
                                     )
@@ -639,12 +681,12 @@ private fun RoundDetailsTable(
 
                             // Total (cyan pill)
                             Box(Modifier.width(totW), contentAlignment = Alignment.Center) {
-                                Box(Modifier.fillMaxWidth().background(ACyan100, RoundedCornerShape(4.dp))
+                                Box(Modifier.fillMaxWidth().background(AppCyan100, RoundedCornerShape(4.dp))
                                     .padding(horizontal = 5.dp, vertical = 3.dp),
                                     contentAlignment = Alignment.Center) {
                                     Text(if (roundTotal > 0) fmtScore(roundTotal) else "—",
                                         fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                                        color = ACyan800)
+                                        color = AppCyan800)
                                 }
                             }
 
@@ -654,7 +696,7 @@ private fun RoundDetailsTable(
                                 Text(
                                     if (hr > 0f) "%.0f".format(hr) else "—",
                                     fontSize = 11.sp,
-                                    color = if (hr > 0f) AHrPink else ATextMuted,
+                                    color = if (hr > 0f) AppHrPink else AppTextMuted,
                                     fontWeight = if (hr > 0f) FontWeight.Medium else FontWeight.Normal,
                                 )
                             }
@@ -666,7 +708,7 @@ private fun RoundDetailsTable(
                                 Text(
                                     if (holdSec != null) "%.1fs".format(holdSec) else "—",
                                     fontSize = 11.sp,
-                                    color = if (holdSec != null) AAmber700 else ATextMuted,
+                                    color = if (holdSec != null) AppAmber700 else AppTextMuted,
                                     fontWeight = if (holdSec != null) FontWeight.Medium else FontWeight.Normal,
                                 )
                             }
@@ -675,12 +717,12 @@ private fun RoundDetailsTable(
                             val scored = round.arrows.count { it.zone != ScoreZone.DNS }
                             val avg = if (scored > 0) roundTotal / scored else 0f
                             Box(Modifier.width(avgW), contentAlignment = Alignment.Center) {
-                                Box(Modifier.fillMaxWidth().background(AAmber100, RoundedCornerShape(4.dp))
+                                Box(Modifier.fillMaxWidth().background(AppAmber100, RoundedCornerShape(4.dp))
                                     .padding(horizontal = 5.dp, vertical = 3.dp),
                                     contentAlignment = Alignment.Center) {
                                     Text(if (avg > 0) "%.1f".format(avg) else "—",
                                         fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                                        color = AAmber800)
+                                        color = AppAmber800)
                                 }
                             }
                             Spacer(Modifier.weight(1f))
@@ -729,13 +771,13 @@ private fun TableRoundEditor(
     Column(
         Modifier.fillMaxWidth()
             .background(Color(0xFFF0FDFA))
-            .border(0.5.dp, ACyan600.copy(0.3f))
+            .border(0.5.dp, AppCyan600.copy(0.3f))
             .padding(12.dp)
     ) {
         Text("Edit Round ${round.number}", fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold, color = ACyan800)
+            fontWeight = FontWeight.SemiBold, color = AppCyan800)
         Spacer(Modifier.height(8.dp))
-        Text("Tap arrow to select, then tap score below:", fontSize = 11.sp, color = ATextSecondary)
+        Text("Tap arrow to select, then tap score below:", fontSize = 11.sp, color = AppTextSecondary)
         Spacer(Modifier.height(6.dp))
 
         for (rowStart in 1..arrowCount step arrowsPerRow) {
@@ -747,11 +789,11 @@ private fun TableRoundEditor(
                     Box(
                         Modifier.weight(1f).clip(RoundedCornerShape(6.dp))
                             .background(when {
-                                isSelected -> ACyan600
-                                existing != null -> ACyan100
-                                else -> ASlate100
+                                isSelected -> AppCyan600
+                                existing != null -> AppCyan100
+                                else -> AppSlate100
                             })
-                            .border(1.dp, if (isSelected) ACyan800 else ABorderLight,
+                            .border(1.dp, if (isSelected) AppCyan800 else AppBorderLight,
                                 RoundedCornerShape(6.dp))
                             .clickable { selectedArrow = if (isSelected) null else a }
                             .padding(vertical = 8.dp),
@@ -759,7 +801,7 @@ private fun TableRoundEditor(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("A$a", fontSize = 9.sp,
-                                color = if (isSelected) Color.White else ATextMuted)
+                                color = if (isSelected) Color.White else AppTextMuted)
                             Text(
                                 when {
                                     existing == null -> "—"
@@ -768,7 +810,7 @@ private fun TableRoundEditor(
                                 },
                                 fontSize = 14.sp, fontWeight = FontWeight.Bold,
                                 color = if (isSelected) Color.White
-                                       else if (existing != null) ATextPrimary else ATextMuted,
+                                       else if (existing != null) AppHeaderDark else AppTextMuted,
                             )
                         }
                     }
@@ -782,7 +824,7 @@ private fun TableRoundEditor(
         AnimatedVisibility(visible = selectedArrow != null) {
             Column {
                 Spacer(Modifier.height(8.dp))
-                Text("Score for Arrow $selectedArrow:", fontSize = 11.sp, color = ATextSecondary)
+                Text("Score for Arrow $selectedArrow:", fontSize = 11.sp, color = AppTextSecondary)
                 Spacer(Modifier.height(4.dp))
                 // Numeric score buttons
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -790,7 +832,7 @@ private fun TableRoundEditor(
                         val label = if (sc == 0f) "M" else "%.0f".format(sc)
                         Box(
                             Modifier.weight(1f).clip(RoundedCornerShape(4.dp))
-                                .background(ASlate100)
+                                .background(AppSlate100)
                                 .clickable {
                                     val zone = zoneForScore(sc)
                                     onScoreArrow(selectedArrow!!, zone, sc)
@@ -801,7 +843,7 @@ private fun TableRoundEditor(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                                color = ATextPrimary)
+                                color = AppHeaderDark)
                         }
                     }
                 }
@@ -809,8 +851,8 @@ private fun TableRoundEditor(
                 // DNS button (full width, distinct style)
                 Box(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp))
-                        .background(ATextMuted.copy(alpha = 0.15f))
-                        .border(1.dp, ATextMuted.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                        .background(AppTextMuted.copy(alpha = 0.15f))
+                        .border(1.dp, AppTextMuted.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
                         .clickable {
                             onScoreArrow(selectedArrow!!, ScoreZone.DNS, 0f)
                             val next = selectedArrow!! + 1
@@ -820,27 +862,27 @@ private fun TableRoundEditor(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("DNS  (Did Not Shoot)", fontSize = 11.sp, fontWeight = FontWeight.Medium,
-                        color = ATextMuted)
+                        color = AppTextMuted)
                 }
             }
         }
 
         Spacer(Modifier.height(10.dp))
-        Text("Round Total", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ATextSecondary)
+        Text("Round Total", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = AppTextSecondary)
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center) {
-            Box(Modifier.size(40.dp).clip(CircleShape).background(ASlate100)
+            Box(Modifier.size(40.dp).clip(CircleShape).background(AppSlate100)
                 .clickable { totalVal = (totalVal - 1f).coerceAtLeast(0f); onSetTotal(totalVal) },
                 contentAlignment = Alignment.Center) {
-                Text("−", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ATextPrimary)
+                Text("−", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppHeaderDark)
             }
             Text("%.0f".format(totalVal), fontSize = 36.sp, fontWeight = FontWeight.Bold,
-                color = AAmber600, modifier = Modifier.padding(horizontal = 20.dp))
-            Box(Modifier.size(40.dp).clip(CircleShape).background(ASlate100)
+                color = AppAmber600, modifier = Modifier.padding(horizontal = 20.dp))
+            Box(Modifier.size(40.dp).clip(CircleShape).background(AppSlate100)
                 .clickable { totalVal += 1f; onSetTotal(totalVal) },
                 contentAlignment = Alignment.Center) {
-                Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ATextPrimary)
+                Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppHeaderDark)
             }
         }
 
@@ -859,15 +901,65 @@ private fun TableRoundEditor(
                         modifier = Modifier.clip(RoundedCornerShape(4.dp))
                             .background(ARed100).clickable { onDelete() }
                             .padding(horizontal = 10.dp, vertical = 4.dp))
-                    Text("No", fontSize = 12.sp, color = ATextSecondary,
+                    Text("No", fontSize = 12.sp, color = AppTextSecondary,
                         modifier = Modifier.clickable { showDeleteConfirm = false }
                             .padding(horizontal = 10.dp, vertical = 4.dp))
                 }
             }
             Text("Done", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(ACyan600)
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(AppCyan600)
                     .clickable { onCancel() }
                     .padding(horizontal = 14.dp, vertical = 8.dp))
+        }
+    }
+}
+
+// ── Nullable stepper for detail dialogs ───────────────────────────────────────
+
+@Composable
+private fun DetailNullableStepper(
+    label: String,
+    value: Int?,
+    onDecrement: () -> Unit,
+    onIncrement: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Column {
+        Text(label, fontSize = 12.sp, color = ASlate600)
+        Spacer(Modifier.height(4.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .border(1.dp, AppBorderLight, RoundedCornerShape(8.dp))
+                .background(AppBgPage),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "−", fontSize = 20.sp, color = AppTextSecondary,
+                modifier = Modifier.clickable { onDecrement() }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            )
+            Text(
+                value?.toString() ?: "—",
+                fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                color = if (value != null) AppHeaderDark else AppTextMuted,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (value != null) {
+                    Text(
+                        "✕", fontSize = 13.sp, color = AppTextMuted,
+                        modifier = Modifier.clickable { onClear() }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                    )
+                }
+                Text(
+                    "+", fontSize = 20.sp, color = AppTextSecondary,
+                    modifier = Modifier.clickable { onIncrement() }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+            }
         }
     }
 }

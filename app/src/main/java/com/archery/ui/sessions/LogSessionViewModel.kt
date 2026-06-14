@@ -24,11 +24,13 @@ class LogSessionViewModel(application: Application) : AndroidViewModel(applicati
         name: String?,
         arrowsPerRound: Int,
         arrowData: List<List<Pair<ScoreZone, Float>?>>,
+        distanceM: Int?,
+        targetSizeCm: Int?,
         onCreated: (Long) -> Unit,
     ) {
         viewModelScope.launch {
             val id = withContext(Dispatchers.IO) {
-                repo.createManualSession(dateMs, name, arrowsPerRound, arrowData)
+                repo.createManualSession(dateMs, name, arrowsPerRound, arrowData, distanceM, targetSizeCm)
             }
             onCreated(id)
         }

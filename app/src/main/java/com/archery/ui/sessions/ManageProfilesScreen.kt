@@ -49,6 +49,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.archery.analytics.AnalyticsCache
 import com.archery.analytics.AnalyticsParser
 import com.archery.analytics.DEFAULT_PROFILE
+import com.archery.ui.theme.*
 import com.archery.analytics.DetectionProfile
 import com.archery.analytics.DetectionSettings
 import com.archery.analytics.SensorSample
@@ -63,19 +64,8 @@ import kotlinx.coroutines.withContext
 
 // ═══════════════ COLORS ═══════════════
 
-private val BgPage        = Color(0xFFF8FAFC)
 private val BgWhite       = Color.White
-private val HeaderDarker  = Color(0xFF0F172A)
-private val Cyan600       = Color(0xFF0891B2)
-private val TextPrimary   = Color(0xFF1E293B)
-private val TextSecondary = Color(0xFF475569)
-private val TextMuted     = Color(0xFF94A3B8)
-private val BorderLight   = Color(0xFFE2E8F0)
 private val Red400        = Color(0xFFF87171)
-private val Amber600      = Color(0xFFD97706)
-private val Amber100      = Color(0xFFFEF3C7)
-private val Amber800      = Color(0xFF92400E)
-private val Slate100      = Color(0xFFF1F5F9)
 private val Violet400     = Color(0xFFA78BFA)
 private val Violet600     = Color(0xFF7C3AED)
 
@@ -271,10 +261,10 @@ fun ManageProfilesScreen(
         rollMax        = rollMax.toFloatOrNull(),
     )
 
-    Column(Modifier.fillMaxSize().background(BgPage)) {
+    Column(Modifier.fillMaxSize().background(AppBgPage)) {
         Box(
             Modifier.fillMaxWidth()
-                .background(HeaderDarker)
+                .background(AppHeaderDarker)
                 .padding(top = 52.dp, bottom = 16.dp, start = 16.dp, end = 16.dp),
         ) {
             Text("←", fontSize = 20.sp, color = Color.White,
@@ -296,7 +286,7 @@ fun ManageProfilesScreen(
                 shape = RoundedCornerShape(12.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Thresholds", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary)
+                        color = AppHeaderDark)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(ddtMin, { ddtMin = it }, label = { Text("gz_ddt min") },
                             singleLine = true, modifier = Modifier.weight(1f),
@@ -314,7 +304,7 @@ fun ManageProfilesScreen(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                     }
                     Text("Optional angle filters — leave blank to disable",
-                        fontSize = 11.sp, color = TextMuted)
+                        fontSize = 11.sp, color = AppTextMuted)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(yawMin, { yawMin = it }, label = { Text("yaw min") },
                             singleLine = true, placeholder = { Text("–") },
@@ -350,13 +340,13 @@ fun ManageProfilesScreen(
                         "hold min: minimum duration in seconds\n" +
                         "gz_d: baseline-removed gz (arm elevation above ~60s average)\n" +
                         "yaw/pitch/roll: raw angle values in degrees",
-                        fontSize = 11.sp, color = TextMuted, lineHeight = 16.sp,
+                        fontSize = 11.sp, color = AppTextMuted, lineHeight = 16.sp,
                     )
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(
                             Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
-                                .background(Slate100)
-                                .border(1.dp, BorderLight, RoundedCornerShape(8.dp))
+                                .background(AppSlate100)
+                                .border(1.dp, AppBorderLight, RoundedCornerShape(8.dp))
                                 .clickable {
                                     vm.resetDraft()
                                     ddtMin   = DEFAULT_PROFILE.gzDdtMin.toString()
@@ -369,10 +359,10 @@ fun ManageProfilesScreen(
                                 }
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center,
-                        ) { Text("Reset", fontSize = 14.sp, color = TextSecondary) }
+                        ) { Text("Reset", fontSize = 14.sp, color = AppTextSecondary) }
                         Box(
                             Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
-                                .background(Cyan600)
+                                .background(AppCyan600)
                                 .clickable { vm.updateDraft(currentDraft()); vm.apply() }
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center,
@@ -391,19 +381,19 @@ fun ManageProfilesScreen(
                 is StatsState.Idle -> {
                     Box(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                            .background(Slate100)
+                            .background(AppSlate100)
                             .clickable { vm.loadStats() }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("Load shot profiles", fontSize = 14.sp, color = Cyan600,
+                        Text("Load shot profiles", fontSize = 14.sp, color = AppCyan600,
                             fontWeight = FontWeight.Medium)
                     }
                 }
                 is StatsState.Loading -> {
                     Box(Modifier.fillMaxWidth().padding(vertical = 16.dp),
                         contentAlignment = Alignment.Center) {
-                        Text("Scanning sessions…", fontSize = 14.sp, color = TextMuted)
+                        Text("Scanning sessions…", fontSize = 14.sp, color = AppTextMuted)
                     }
                 }
                 is StatsState.Ready -> {
@@ -419,7 +409,7 @@ fun ManageProfilesScreen(
                         Box(Modifier.fillMaxWidth().padding(24.dp),
                             contentAlignment = Alignment.Center) {
                             Text("No shots detected with current thresholds",
-                                fontSize = 14.sp, color = TextMuted)
+                                fontSize = 14.sp, color = AppTextMuted)
                         }
                     }
                 }
@@ -429,7 +419,7 @@ fun ManageProfilesScreen(
                         shape = RoundedCornerShape(12.dp)) {
                         Box(Modifier.fillMaxWidth().padding(24.dp),
                             contentAlignment = Alignment.Center) {
-                            Text("No session data found", fontSize = 14.sp, color = TextMuted)
+                            Text("No session data found", fontSize = 14.sp, color = AppTextMuted)
                         }
                     }
                 }
@@ -463,15 +453,15 @@ private fun ShotProfilesCard(
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("Shot Profiles", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary)
-                Text("${stats.sessionsScanned} sessions", fontSize = 12.sp, color = TextMuted)
+                    color = AppHeaderDark)
+                Text("${stats.sessionsScanned} sessions", fontSize = 12.sp, color = AppTextMuted)
             }
             // Accuracy row — only show when ground-truth scoring data is available
             if (stats.groundTruthArrows > 0) {
                 val pct = (stats.totalShots * 100f / stats.groundTruthArrows).coerceIn(0f, 999f)
                 val (pctColor, pctBg) = when {
                     pct >= 90f -> Pair(Color(0xFF166534), Color(0xFFDCFCE7))  // green
-                    pct >= 70f -> Pair(Amber800,          Amber100)            // amber
+                    pct >= 70f -> Pair(AppAmber800,          AppAmber100)            // amber
                     else       -> Pair(Color(0xFF991B1B), Color(0xFFFEE2E2))  // red
                 }
                 Row(
@@ -494,8 +484,8 @@ private fun ShotProfilesCard(
             if (stats.shotWindows.isNotEmpty()) {
                 val channels = listOf(
                     ChannelDef("gz_d",  Violet400, { w: ShotWindow -> w.gzD },   draft.gzMinDetrended, null),
-                    ChannelDef("yaw",   Cyan600,   { w: ShotWindow -> w.yaw },   draft.yawMin,         draft.yawMax),
-                    ChannelDef("pitch", Amber600,  { w: ShotWindow -> w.pitch }, draft.pitchMin,       draft.pitchMax),
+                    ChannelDef("yaw",   AppCyan600,   { w: ShotWindow -> w.yaw },   draft.yawMin,         draft.yawMax),
+                    ChannelDef("pitch", AppAmber600,  { w: ShotWindow -> w.pitch }, draft.pitchMin,       draft.pitchMax),
                     ChannelDef("roll",  Red400,    { w: ShotWindow -> w.roll },  draft.rollMin,        draft.rollMax),
                 )
                 channels.forEach { ch ->
@@ -514,19 +504,19 @@ private fun ShotProfilesCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(top = 4.dp)) {
                     LegendDash(Red400, "hold min (${draft.holdMinSec}s)")
-                    LegendDash(Amber600, "gz_d min (${draft.gzMinDetrended})")
+                    LegendDash(AppAmber600, "gz_d min (${draft.gzMinDetrended})")
                 }
             }
 
             // Percentile table
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatPctCol(Modifier.weight(1f), "Hold (s)", Amber600,
+                StatPctCol(Modifier.weight(1f), "Hold (s)", AppAmber600,
                     stats.holdP10, stats.holdP50, stats.holdP90, "%.1f")
-                StatPctCol(Modifier.weight(1f), "Raw gz", Cyan600,
+                StatPctCol(Modifier.weight(1f), "Raw gz", AppCyan600,
                     stats.gzP10, stats.gzP50, stats.gzP90, "%.1f")
             }
             Text("set hold min ≤ p10 to capture most shots · gz_d min should be well below p10 of raw gz",
-                fontSize = 10.sp, color = TextMuted, lineHeight = 14.sp)
+                fontSize = 10.sp, color = AppTextMuted, lineHeight = 14.sp)
         }
     }
 }
@@ -583,12 +573,12 @@ private fun ShotProfileChart(
 
         // Threshold min line (horizontal, amber)
         if (threshMin != null) {
-            drawLine(Amber600, Offset(pl, ty(threshMin)), Offset(pl + cw, ty(threshMin)),
+            drawLine(AppAmber600, Offset(pl, ty(threshMin)), Offset(pl + cw, ty(threshMin)),
                 strokeWidth = 2f, pathEffect = dash)
         }
         // Threshold max line (horizontal, amber dashed — slightly different dash phase)
         if (threshMax != null) {
-            drawLine(Amber600, Offset(pl, ty(threshMax)), Offset(pl + cw, ty(threshMax)),
+            drawLine(AppAmber600, Offset(pl, ty(threshMax)), Offset(pl + cw, ty(threshMax)),
                 strokeWidth = 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 5f), 6f))
         }
 
@@ -627,7 +617,7 @@ private fun LegendDot(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(Modifier.width(16.dp).height(2.dp).background(color))
-        Text(label, fontSize = 10.sp, color = TextMuted)
+        Text(label, fontSize = 10.sp, color = AppTextMuted)
     }
 }
 
@@ -636,7 +626,7 @@ private fun LegendDash(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(Modifier.width(16.dp).height(2.dp).background(color.copy(alpha = 0.8f)))
-        Text(label, fontSize = 10.sp, color = TextMuted)
+        Text(label, fontSize = 10.sp, color = AppTextMuted)
     }
 }
 
@@ -650,9 +640,9 @@ private fun StatPctCol(
     p90: Float,
     fmt: String,
 ) {
-    Column(modifier.border(1.dp, BorderLight, RoundedCornerShape(8.dp)).padding(10.dp),
+    Column(modifier.border(1.dp, AppBorderLight, RoundedCornerShape(8.dp)).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = AppTextSecondary)
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
             PctLabel("p10", fmt.format(p10), color)
             PctLabel("p50", fmt.format(p50), color)
@@ -665,7 +655,7 @@ private fun StatPctCol(
 private fun PctLabel(pct: String, value: String, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(pct, fontSize = 9.sp, color = TextMuted)
+        Text(pct, fontSize = 9.sp, color = AppTextMuted)
         Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = color)
     }
 }
