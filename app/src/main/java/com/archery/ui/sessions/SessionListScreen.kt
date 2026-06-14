@@ -186,7 +186,7 @@ fun SessionListScreen(
                 val mean = if (vals.isEmpty()) s.avgPerArrow else vals.average().toFloat()
                 BarEntry(mean, stdevOf(vals), s.date.format(dateFmt))
             }
-            item { TrendBarChart("Avg Score / Arrow", scoreEntries, AppCyan600) { "%.1f".format(it) } }
+            item { TrendLineChart("Avg Score / Arrow", scoreEntries, AppCyan600) { "%.1f".format(it) } }
         }
 
         val holdSessions = activeSessions.filter { (it.avgHoldMs ?: 0L) > 0L }
@@ -198,7 +198,7 @@ fun SessionListScreen(
                 val mean = if (vals.isEmpty()) (s.avgHoldMs ?: 0L) / 1000f else vals.average().toFloat()
                 BarEntry(mean, stdevOf(vals), s.date.format(dateFmt))
             }
-            item { TrendBarChart("Avg Hold / Arrow (s)", holdEntries, Amber700) { "%.1f".format(it) } }
+            item { TrendLineChart("Avg Hold / Arrow (s)", holdEntries, Amber700) { "%.1f".format(it) } }
         }
 
         items(displaySessions, key = { it.id }) { s ->
@@ -397,7 +397,7 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
     }
 }
 
-// ── Shared bar-chart helpers ───────────────────────────────────────────────
+// ── Shared trend-chart helpers ────────────────────────────────────────────────
 
 private data class BarEntry(val mean: Float, val stdev: Float, val xLabel: String)
 
@@ -411,15 +411,14 @@ private fun stdevOf(vals: List<Double>): Float {
 private fun ceilTo(v: Float, step: Float) = ceil(v / step) * step
 
 @Composable
-private fun TrendBarChart(
+private fun TrendLineChart(
     title: String,
     entries: List<BarEntry>,
-    barColor: Color,
+    lineColor: Color,
     yFmt: (Float) -> String,
 ) {
     if (entries.isEmpty()) return
-    // Y-axis: start at 0, end at a "nice" ceiling above max+σ
-    val dataTop = entries.maxOf { it.mean + it.stdev.coerceAtLeast(0f) }
+    val dataTop = entries.maxOf { (it.mean + it.stdev).coerceAtLeast(it.mean) }
     val step = when {
         dataTop > 20 -> 5f
         dataTop > 10 -> 2f
@@ -428,6 +427,7 @@ private fun TrendBarChart(
         else         -> 0.2f
     }
     val yMax = ceilTo(dataTop * 1.05f, step).coerceAtLeast(step)
+    val n = entries.size
 
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = BgWhite),
         shape = RoundedCornerShape(10.dp)) {
@@ -438,13 +438,12 @@ private fun TrendBarChart(
                 val padL = 46f; val padR = 8f; val padT = 10f; val padB = 28f
                 val cw = size.width - padL - padR
                 val ch = size.height - padT - padB
-                val n = entries.size
 
-                fun yScr(v: Float) = padT + ch * (1f - v / yMax)
-                fun xCenter(i: Int) = padL + cw * (i + 0.5f) / n
-                val yBase = yScr(0f)
+                fun yScr(v: Float) = padT + ch * (1f - (v / yMax).coerceIn(0f, 1f))
+                // Edge-to-edge x: first point at left edge, last at right edge
+                fun xPos(i: Int) = if (n > 1) padL + cw * i / (n - 1f) else padL + cw / 2f
 
-                // Y grid lines + labels
+                // Y grid + labels
                 val yPaint = android.graphics.Paint().apply {
                     color = android.graphics.Color.rgb(0x94, 0xA3, 0xB8)
                     textSize = 20f; isAntiAlias = true
@@ -457,35 +456,40 @@ private fun TrendBarChart(
                     drawContext.canvas.nativeCanvas.drawText(yFmt(v), padL - 5f, y + 6f, yPaint)
                 }
 
-                // Bars + error bars + x labels
-                val barW = (cw / n * 0.55f).coerceIn(8f, 40f)
+                // ±1σ shaded band (closed polygon: upper edge L→R, lower edge R→L)
+                if (n >= 2) {
+                    val band = Path().apply {
+                        entries.forEachIndexed { i, e ->
+                            val y = yScr((e.mean + e.stdev).coerceAtMost(yMax))
+                            if (i == 0) moveTo(xPos(i), y) else lineTo(xPos(i), y)
+                        }
+                        entries.indices.reversed().forEach { i ->
+                            lineTo(xPos(i), yScr((entries[i].mean - entries[i].stdev).coerceAtLeast(0f)))
+                        }
+                        close()
+                    }
+                    drawPath(band, lineColor.copy(alpha = 0.15f))
+                }
+
+                // Mean line
+                val linePath = Path().apply {
+                    entries.forEachIndexed { i, e ->
+                        val y = yScr(e.mean)
+                        if (i == 0) moveTo(xPos(i), y) else lineTo(xPos(i), y)
+                    }
+                }
+                drawPath(linePath, lineColor, style = Stroke(2.5f))
+
+                // Dots + x labels
                 val xPaint = android.graphics.Paint().apply {
                     color = android.graphics.Color.rgb(0x94, 0xA3, 0xB8)
                     textSize = 20f; isAntiAlias = true
                     textAlign = android.graphics.Paint.Align.CENTER
                 }
                 entries.forEachIndexed { i, e ->
-                    val xc = xCenter(i)
-                    val yTop = yScr(e.mean.coerceAtLeast(0f))
-
-                    // Bar
-                    drawRect(
-                        barColor.copy(alpha = 0.75f),
-                        topLeft = Offset(xc - barW / 2, yTop),
-                        size = Size(barW, (yBase - yTop).coerceAtLeast(1f)),
-                    )
-
-                    // Error bar ±1σ
-                    if (e.stdev > 0f) {
-                        val yHi = yScr((e.mean + e.stdev).coerceAtMost(yMax))
-                        val yLo = yScr((e.mean - e.stdev).coerceAtLeast(0f))
-                        val cap = barW * 0.35f
-                        drawLine(barColor, Offset(xc, yHi), Offset(xc, yLo), 2f)
-                        drawLine(barColor, Offset(xc - cap, yHi), Offset(xc + cap, yHi), 2f)
-                        drawLine(barColor, Offset(xc - cap, yLo), Offset(xc + cap, yLo), 2f)
-                    }
-
-                    // X label — skip alternates when bars are crowded
+                    val xc = xPos(i); val yc = yScr(e.mean)
+                    drawCircle(lineColor, 4.5f, Offset(xc, yc))
+                    drawCircle(Color.White, 2.5f, Offset(xc, yc))
                     if (n <= 8 || i % 2 == 0)
                         drawContext.canvas.nativeCanvas.drawText(e.xLabel, xc, size.height - 4f, xPaint)
                 }
