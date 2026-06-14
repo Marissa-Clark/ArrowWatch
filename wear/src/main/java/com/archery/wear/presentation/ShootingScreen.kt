@@ -160,8 +160,7 @@ fun ShootingScreen(
             verticalArrangement = Arrangement.Center,
         ) {
 
-            // Leading spacer shifts center of gravity down so END clears the top bezel
-            Spacer(modifier = Modifier.height(22.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // ── TOP: End number ───────────────────────────────────────────────
             Text(
@@ -175,7 +174,7 @@ fun ShootingScreen(
                 textAlign = TextAlign.Center,
             )
 
-            Spacer(modifier = Modifier.height(22.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // ── CENTER: Score metrics ─────────────────────────────────────────
             Row(
@@ -191,7 +190,7 @@ fun ShootingScreen(
                     Text(
                         text = if (lastEndAvg != null) "%.1f".format(lastEndAvg) else "—",
                         style = MetricStyle.copy(
-                            fontSize = 30.sp,
+                            fontSize = 28.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (lastEndAvg != null) scoreColor(lastEndAvg) else WatchTextMuted,
                         ),
@@ -211,7 +210,7 @@ fun ShootingScreen(
                 Box(
                     modifier = Modifier
                         .width(1.dp)
-                        .height(40.dp)
+                        .height(36.dp)
                         .background(Color(0xFF1E293B)),
                 )
 
@@ -223,7 +222,7 @@ fun ShootingScreen(
                     Text(
                         text = if (avgPerArrow > 0f) "%.1f".format(avgPerArrow) else "—",
                         style = MetricStyle.copy(
-                            fontSize = 30.sp,
+                            fontSize = 28.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (avgPerArrow > 0f) scoreColor(avgPerArrow) else WatchTextMuted,
                         ),
@@ -240,13 +239,13 @@ fun ShootingScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // ── BOTTOM: Heart rate ────────────────────────────────────────────
             Text(
                 text = if (heartRate > 0f) "${heartRate.toInt()}" else "—",
                 style = MetricStyle.copy(
-                    fontSize = 46.sp,
+                    fontSize = 38.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (heartRate > 0f) WatchRed else WatchTextMuted,
                 ),
@@ -262,12 +261,12 @@ fun ShootingScreen(
                 ),
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Score End — main action (crown forward also works)
             Button(
                 onClick = onEnterScoring,
-                modifier = Modifier.fillMaxWidth(0.75f).height(32.dp),
+                modifier = Modifier.fillMaxWidth(0.75f).height(28.dp),
                 colors = ButtonDefaults.buttonColors(backgroundColor = WatchSurfaceLight),
             ) {
                 Text(
@@ -281,12 +280,12 @@ fun ShootingScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // End session — small, danger-red
             Button(
                 onClick = onEndSession,
-                modifier = Modifier.width(52.dp).height(24.dp),
+                modifier = Modifier.width(52.dp).height(22.dp),
                 colors = ButtonDefaults.buttonColors(backgroundColor = WatchBtnDanger),
             ) {
                 Text(

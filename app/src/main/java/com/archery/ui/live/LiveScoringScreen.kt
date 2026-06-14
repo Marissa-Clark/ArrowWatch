@@ -311,43 +311,35 @@ private fun ShootingPhaseView(
         }
     }
 
-    Spacer(Modifier.height(12.dp))
-
-    // ── Current end card — detected shots + enter scoring ─────────────────────
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = BgWhite),
-        shape = RoundedCornerShape(12.dp),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Button(
-                onClick = onEnterScoring,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Cyan600),
-                shape = RoundedCornerShape(10.dp),
-            ) {
-                Text(
-                    "Enter Scoring", fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold, color = Color.White,
-                )
-            }
-        }
-    }
-
+    // ── Zone distribution (right below stats so they read as a unit) ─────────
     if (completedRounds.isNotEmpty()) {
-        Spacer(Modifier.height(20.dp))
-
-        // ── Zone distribution across all completed ends ───────────────────────
         val zoneCounts = completedRounds
             .flatMap { it.arrows }
             .mapNotNull { it.zone }
             .filter { it != ScoreZone.DNS }
             .groupingBy { it }
             .eachCount()
+        Spacer(Modifier.height(8.dp))
         LiveZoneDistribution(zoneCounts)
+    }
 
-        Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(12.dp))
 
+    // ── Enter Scoring button ──────────────────────────────────────────────────
+    Button(
+        onClick = onEnterScoring,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(containerColor = Cyan600),
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Text(
+            "Enter Scoring", fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold, color = Color.White,
+        )
+    }
+
+    if (completedRounds.isNotEmpty()) {
+        Spacer(Modifier.height(20.dp))
         Text(
             "End Details", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
         )

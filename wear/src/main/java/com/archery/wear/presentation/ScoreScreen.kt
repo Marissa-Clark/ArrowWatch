@@ -20,7 +20,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,10 +42,7 @@ import androidx.wear.tooling.preview.devices.WearDevices
 import com.archery.shared.ScoreZone
 import com.archery.wear.WatchRound
 import com.archery.wear.WatchShot
-import com.archery.wear.presentation.theme.WatchAmber
 import com.archery.wear.presentation.theme.WatchBg
-import com.archery.wear.presentation.theme.WatchBtnConfirm
-import com.archery.wear.presentation.theme.WatchBtnSecondary
 import com.archery.wear.presentation.theme.WatchCyan
 import com.archery.wear.presentation.theme.WatchRed
 import com.archery.wear.presentation.theme.WatchSurfaceLight
@@ -83,8 +79,6 @@ fun ScoreScreen(
     val focusRequester = remember { FocusRequester() }
     val firstUnscored = round?.shots?.indexOfFirst { it.finalZone == null }
     var currentArrow by remember { mutableIntStateOf((firstUnscored ?: 0).coerceAtLeast(0)) }
-    var showTotalEntry by remember { mutableStateOf(false) }
-    var enteredTotal by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(totalArrows) {
         if (totalArrows > 0) currentArrow = currentArrow.coerceIn(0, totalArrows - 1)
@@ -97,9 +91,10 @@ fun ScoreScreen(
             i != arrowIdx && shot.finalZone == null
         } ?: 0
         if (remainingUnscored == 0 && totalArrows > 0) {
-            // round state hasn't been updated in the VM yet — supply the just-scored zone manually
-            enteredTotal = roundColorTotal(round, overrideIdx = arrowIdx, overrideZone = zone)
-            showTotalEntry = true
+            // All arrows scored — auto-confirm the zone total and finish
+            val computedTotal = roundColorTotal(round, overrideIdx = arrowIdx, overrideZone = zone)
+            onSetTotal(computedTotal.toFloat())
+            onFinish()
         } else {
             val next = round?.shots?.let { shots ->
                 ((arrowIdx + 1) until totalArrows).firstOrNull { shots[it].finalZone == null }
@@ -108,8 +103,7 @@ fun ScoreScreen(
         }
     }
 
-    if (!showTotalEntry) {
-        Box(
+    Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(WatchBg)
@@ -184,61 +178,6 @@ fun ScoreScreen(
                 }
             }
         }
-    } else {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(WatchBg)
-                .onRotaryScrollEvent { event ->
-                    val delta = if (event.verticalScrollPixels > 0) 1 else -1
-                    enteredTotal = (enteredTotal + delta).coerceIn(0, 300)
-                    true
-                }
-                .focusRequester(focusRequester)
-                .focusable()
-                .padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = "← Round Total",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = WatchTextSecondary,
-                modifier = Modifier.clickable { showTotalEntry = false },
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = { enteredTotal = (enteredTotal - 1).coerceAtLeast(0) },
-                    modifier = Modifier.size(36.dp),
-                    colors = ButtonDefaults.buttonColors(backgroundColor = WatchBtnSecondary),
-                ) { Text("−", fontSize = 18.sp, color = WatchTextPrimary) }
-
-                Text(text = "$enteredTotal", fontSize = 44.sp, fontWeight = FontWeight.Bold, color = WatchAmber)
-
-                Button(
-                    onClick = { enteredTotal = (enteredTotal + 1).coerceAtMost(300) },
-                    modifier = Modifier.size(36.dp),
-                    colors = ButtonDefaults.buttonColors(backgroundColor = WatchBtnSecondary),
-                ) { Text("+", fontSize = 18.sp, color = WatchTextPrimary) }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(
-                    onClick = onFinish,
-                    modifier = Modifier.size(44.dp),
-                    colors = ButtonDefaults.buttonColors(backgroundColor = WatchBtnSecondary),
-                ) { Text("Skip", fontSize = 10.sp, color = WatchTextSecondary) }
-
-                Button(
-                    onClick = { onSetTotal(enteredTotal.toFloat()); onFinish() },
-                    modifier = Modifier.size(48.dp),
-                    colors = ButtonDefaults.buttonColors(backgroundColor = WatchBtnConfirm),
-                ) { Text("✓", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = WatchTextPrimary) }
-            }
-        }
-    }
 }
 
 @Composable
