@@ -329,10 +329,9 @@ private fun LiveTile(mod: Modifier, label: String, value: String, valueColor: Co
 
 @Composable
 private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: () -> Unit) {
-    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy  h:mm a")
+    val dateFmt = DateTimeFormatter.ofPattern("EEE, MMM d")
+    val timeFmt = DateTimeFormatter.ofPattern("h:mm a")
     val avg = session.avgPerArrow
-    val durationMin = (session.durationSec / 60).toInt()
-    val name = session.displayName ?: "Practice Session"
     var confirmDelete by remember { mutableStateOf(false) }
 
     Card(
@@ -340,31 +339,27 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
         colors = CardDefaults.cardColors(containerColor = BgWhite),
         shape = RoundedCornerShape(12.dp),
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Text(name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AppHeaderDark,
-                    modifier = Modifier.weight(1f))
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            // ── Date headline + delete ────────────────────────────────────────
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.Top) {
+                Column {
+                    Text(
+                        session.date.format(dateFmt),
+                        fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppHeaderDark,
+                    )
+                    Text(
+                        session.date.format(timeFmt),
+                        fontSize = 12.sp, color = AppTextSecondary,
+                    )
+                }
                 if (!confirmDelete) {
-                    if (avg > 0) {
-                        @Suppress("UNUSED_VARIABLE")
-                        val isApprox = session.rounds.any { r ->
-                            r.confirmedScore == null && (r.arrows.isEmpty() || r.arrows.any { !it.isFinal })
-                        }
-                        Text("%.1f / arrow".format(avg), fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold, color = Amber700,
-                            modifier = Modifier.padding(end = 8.dp))
-                    }
-                    // Small delete icon
                     Text("✕", fontSize = 13.sp, color = AppTextMuted,
-                        modifier = Modifier
-                            .clickable { confirmDelete = true }
-                            .padding(4.dp))
+                        modifier = Modifier.clickable { confirmDelete = true }.padding(4.dp))
                 }
             }
-            Spacer(Modifier.height(3.dp))
-            Text(session.date.format(formatter), fontSize = 12.sp, color = AppTextSecondary)
-            Spacer(Modifier.height(3.dp))
+
             if (confirmDelete) {
+                Spacer(Modifier.height(10.dp))
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -384,17 +379,48 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
                             .padding(horizontal = 6.dp, vertical = 4.dp))
                 }
             } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (session.isArchived) Text("Archived", fontSize = 12.sp, color = AppTextMuted)
-                    Text("${session.rounds.size} rounds", fontSize = 12.sp, color = AppTextSecondary)
-                    Text("${session.totalArrows} arrows", fontSize = 12.sp, color = AppTextSecondary)
-                    if (durationMin > 0) Text("${durationMin}min", fontSize = 12.sp, color = AppTextSecondary)
-                    val holdSec = (session.avgHoldMs ?: 0L).takeIf { it > 0L }?.let { it / 1000f }
-                    if (holdSec != null) Text("%.1fs hold".format(holdSec), fontSize = 12.sp, color = Amber700)
+                Spacer(Modifier.height(10.dp))
+                // ── Three stat columns ────────────────────────────────────────
+                Row(Modifier.fillMaxWidth()) {
+                    SessionStat(Modifier.weight(1f), "ENDS",   "${session.rounds.size}")
+                    SessionStatDivider()
+                    SessionStat(Modifier.weight(1f), "ARROWS", "${session.totalArrows}")
+                    SessionStatDivider()
+                    SessionStat(
+                        modifier = Modifier.weight(1f),
+                        label   = "AVG",
+                        value   = if (avg > 0) "%.1f".format(avg) else "—",
+                        color   = if (avg > 0) Amber700 else AppTextMuted,
+                    )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SessionStat(
+    modifier: Modifier = Modifier,
+    label: String,
+    value: String,
+    color: Color = AppHeaderDark,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, fontSize = 10.sp, color = AppTextMuted,
+            fontWeight = FontWeight.Medium, letterSpacing = 1.sp)
+        Spacer(Modifier.height(2.dp))
+        Text(value, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = color)
+    }
+}
+
+@Composable
+private fun SessionStatDivider() {
+    Box(
+        Modifier
+            .padding(horizontal = 4.dp)
+            .size(width = 1.dp, height = 32.dp)
+            .background(AppBorderLight)
+    )
 }
 
 // ── Shared trend-chart helpers ────────────────────────────────────────────────
