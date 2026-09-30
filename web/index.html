@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArrowWatch Analytics</title>
+<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Inter', -apple-system, sans-serif; background: #F8FAFC; color: #1E293B; display: flex; height: 100vh; overflow: hidden; }
+
+#sidebar { width: 320px; min-width: 320px; background: #1E293B; padding: 12px; overflow-y: auto; border-right: 1px solid #E2E8F0; display: flex; flex-direction: column; gap: 4px; }
+#sidebar h2 { color: #0891B2; font-size: 18px; margin-bottom: 1px; }
+#sidebar .subtitle { color: #94A3B8; font-size: 11px; margin-bottom: 10px; }
+#sidebar label { font-size: 11px; color: #94A3B8; display: block; margin-bottom: 1px; }
+#sidebar .section-title { font-size: 12px; font-weight: 600; color: #F8FAFC; margin: 4px 0 2px; }
+.overlay-chart { height: 80px; margin: 2px 0; }
+.threshold-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.threshold-row label { flex-shrink: 0; width: 55px; font-size: 11px; color: #94A3B8; margin: 0; }
+.threshold-row input[type="range"] { flex: 1; height: 4px; accent-color: #0891B2; }
+.threshold-row input[type="number"] { width: 55px; background: #0F172A; color: #F8FAFC; border: 1px solid #334155; border-radius: 3px; padding: 3px 4px; font-size: 11px; text-align: center; }
+.param-row { display: flex; gap: 4px; }
+.param-row > div { flex: 1; }
+.param-row input[type="number"] { width: 100%; background: #0F172A; color: #F8FAFC; border: 1px solid #334155; border-radius: 3px; padding: 4px 5px; font-size: 11px; }
+.btn { width: 100%; border: none; border-radius: 4px; padding: 7px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.btn-cyan { background: #0891B2; color: white; }
+.btn-amber { background: #D97706; color: white; }
+.btn-green { background: #16A34A; color: white; }
+.btn:hover { opacity: 0.9; }
+hr { border: none; border-top: 1px solid #334155; margin: 6px 0; }
+#drop-zone { border: 2px dashed #334155; border-radius: 6px; padding: 24px 8px; text-align: center; color: #64748B; cursor: pointer; font-size: 12px; margin: 4px 0; }
+#drop-zone.dragover { border-color: #0891B2; color: #0891B2; }
+#file-input { display: none; }
+#shot-guidance { font-size: 11px; margin-top: 4px; padding: 6px; border-radius: 4px; background: #0F172A; border: 1px solid #334155; }
+#shot-guidance .match { color: #22C55E; }
+#shot-guidance .over { color: #D97706; }
+#shot-guidance .under { color: #EF4444; }
+#shot-guidance .hint { color: #94A3B8; font-size: 10px; margin-top: 3px; }
+#shot-guidance .hint b { color: #F8FAFC; }
+#profile-section select, #profile-section input[type="text"] { width: 100%; background: #0F172A; color: #F8FAFC; border: 1px solid #334155; border-radius: 3px; padding: 4px 6px; font-size: 11px; margin-bottom: 3px; }
+
+#main { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+#chart-controls { display: flex; align-items: center; gap: 12px; padding: 8px 16px 4px; font-size: 12px; color: #475569; }
+#chart-controls input[type="range"] { width: 100px; accent-color: #0891B2; }
+#chart-accel, #chart-gyro { padding: 0 8px; }
+#loading { display: none; position: fixed; inset: 0; background: rgba(248,250,252,0.85); z-index: 100; justify-content: center; align-items: center; font-size: 18px; color: #0891B2; }
+#loading.active { display: flex; }
+</style>
+</head>
+<body>
+
+<div id="loading"><div>Processing...</div></div>
+
+<div id="sidebar">
+  <h2>ArrowWatch</h2>
+  <div class="subtitle">Sensor Analytics</div>
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">Drop CSV here or click to browse</div>
+  <input type="file" id="file-input" accept=".csv">
+
+  <hr>
+  <div class="section-title">Shot Profiles</div>
+  <div id="overlay-gzD" class="overlay-chart"></div>
+  <div class="threshold-row"><label>gz_d min</label><input type="range" id="sl-gz-min" min="-3" max="6" step="0.05" value="0"><input type="number" id="p-gz-min" value="0" step="0.05"></div>
+  <div id="overlay-gzDdt" class="overlay-chart"></div>
+  <div class="threshold-row"><label>gz_ddt min</label><input type="range" id="sl-gz-ddt-min" min="-5" max="5" step="0.05" value="-5"><input type="number" id="p-gz-ddt-min" value="-5" step="0.05"></div>
+  <div class="threshold-row"><label>gz_ddt max</label><input type="range" id="sl-gz-ddt-max" min="-5" max="5" step="0.05" value="5"><input type="number" id="p-gz-ddt-max" value="5" step="0.05"></div>
+
+  <hr>
+  <div class="section-title">Detection Settings</div>
+  <div class="param-row">
+    <div><label>duration</label><input type="number" id="p-hold-min" value="3.0" step="0.5"></div>
+    <div><label>hold_max</label><input type="number" id="p-hold-max" value="14.0" step="0.5"></div>
+  </div>
+  <div class="param-row">
+    <div><label>merge_gap</label><input type="number" id="p-merge" value="1.0" step="0.1"></div>
+    <div><label>cooldown</label><input type="number" id="p-cooldown" value="2.0" step="0.5"></div>
+  </div>
+  <div class="param-row">
+    <div><label>detrend_win</label><input type="number" id="p-detrend" value="60" step="5"></div>
+  </div>
+  <button class="btn btn-cyan" onclick="redetect()" style="margin-top:4px">Re-detect</button>
+  <button class="btn btn-amber" onclick="refineDetection()" style="margin-top:3px">Refine (remove outliers)</button>
+
+  <hr>
+  <div class="section-title">Shot Count</div>
+  <div class="param-row">
+    <div><label>Expected</label><input type="number" id="expected-shots" value="" placeholder="auto"></div>
+    <div style="display:flex;align-items:end"><button class="btn btn-green" onclick="autoTune()" style="margin-bottom:0;padding:5px">Auto-Tune</button></div>
+  </div>
+  <div id="shot-guidance"></div>
+
+  <hr>
+  <div id="profile-section">
+    <div class="section-title">Profiles</div>
+    <select id="profile-select"><option value="">Default</option></select>
+    <div style="display:flex;gap:4px;margin-top:3px">
+      <input type="text" id="profile-name" placeholder="Profile name" style="flex:1">
+      <button class="btn btn-amber" style="width:auto;padding:5px 10px;font-size:11px" onclick="saveProfile()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="chart-controls">
+    <label>Smooth: <input type="range" id="smooth-slider" min="1" max="15" step="2" value="1"> <span id="smooth-val">Off</span></label>
+  </div>
+  <div id="chart-accel"></div>
+  <div id="chart-gyro"></div>
+  <div id="chart-stab"></div>
+</div>
+
+<script>
+// ═══════════════ STATE ═══════════════
+let S = null;
+
+// ═══════════════ CSV PARSING ═══════════════
+function parseCSV(text) {
+  const lines = text.split('\n');
+  if (lines.length < 2) return null;
+  const sensor = { time:[], gz:[], roll:[], pitch:[], yaw:[], steps:[], gx:[], gy:[] };
+  const hr = [];
+  const walkStarts = [], walkStops = [];
+  const roundScores = {}, roundScoreTimes = {}, deletedRounds = new Set();
+  const arrowCounts = {};
+  const roundArrows = {};
+  const roundHrVals = {};
+  const roundHoldVals = {};
+  let duration = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const c = line.split(',');
+    if (c.length < 2) continue;
+    const t = parseFloat(c[0]);
+    if (isNaN(t)) continue;
+    const ev = c[1].trim();
+    switch (ev) {
+      case 'sensor': {
+        const gz = pf(c,5); if (gz === null) continue;
+        sensor.time.push(t); sensor.gz.push(gz);
+        sensor.roll.push(pf(c,12,0)); sensor.pitch.push(pf(c,11,0));
+        sensor.yaw.push(pf(c,10,0)); sensor.steps.push(pi(c,13,0));
+        sensor.gx.push(pf(c,14,0)); sensor.gy.push(pf(c,15,0));
+        break;
+      }
+      case 'heart_rate': { const b = pf(c,9,0); if (b > 0) hr.push({time:t, bpm:b}); break; }
+      case 'walking_start': walkStarts.push(t); break;
+      case 'walking_stop': walkStops.push(t); break;
+      case 'actual_score': { const r=pi(c,2); if(r===null)break; roundScores[r]=pf(c,8,0); roundScoreTimes[r]=t; break; }
+      case 'approx_score': { const r=pi(c,2); if(r===null)break; if(!(r in roundScores)) roundScores[r]=pf(c,8,0); if(!(r in roundScoreTimes)) roundScoreTimes[r]=t; break; }
+      case 'final_score': case 'quick_score': {
+        const r=pi(c,2); if(r===null)break; roundScoreTimes[r]=t; arrowCounts[r]=(arrowCounts[r]||0)+1;
+        const sn=pi(c,3), z=(c[7]||'').trim()||'MISS', sc=pf(c,8,0), isFinal=ev==='final_score';
+        if(sn!==null){ if(!roundArrows[r]) roundArrows[r]={}; if(!(sn in roundArrows[r])||isFinal) roundArrows[r][sn]={shotNumber:sn,zone:z,score:sc,isFinal}; }
+        break;
+      }
+      case 'scoring': case 'manual_shot': case 'auto_shot': {
+        const r=pi(c,2), hm=pi(c,4), hhr=pf(c,9);
+        if(r!==null){ if(hm&&hm>0)(roundHoldVals[r]||(roundHoldVals[r]=[])).push(hm); if(hhr&&hhr>0)(roundHrVals[r]||(roundHrVals[r]=[])).push(hhr); }
+        break;
+      }
+      case 'edit_score': {
+        const r=pi(c,2),sn=pi(c,3),z=(c[7]||'').trim()||'MISS',sc=pf(c,8,0);
+        if(r!==null&&sn!==null){ if(!roundArrows[r]) roundArrows[r]={}; roundArrows[r][sn]={shotNumber:sn,zone:z,score:sc,isFinal:true}; }
+        break;
+      }
+      case 'edit_round_total': { const r=pi(c,2); if(r!==null) roundScores[r]=pf(c,8,0); break; }
+      case 'delete_round': { const r=pi(c,2); if(r!==null) deletedRounds.add(r); break; }
+      case 'session_end': duration = t; break;
+    }
+  }
+  if (!sensor.time.length) return null;
+  const n = sensor.time.length;
+  const ta = k => new Float64Array(sensor[k]);
+  const s = { time: ta('time'), gz: ta('gz'), roll: ta('roll'), pitch: ta('pitch'), yaw: ta('yaw'), steps: new Float64Array(sensor.steps), gx: ta('gx'), gy: ta('gy') };
+  if (!duration) duration = Math.max(s.time[n-1] || 0, hr.length ? hr[hr.length-1].time : 0);
+  let arrowsPerRound = 3;
+  const acVals = Object.values(arrowCounts);
+  if (acVals.length) {
+    const freq = {}; acVals.forEach(v => freq[v] = (freq[v]||0)+1);
+    arrowsPerRound = +Object.entries(freq).sort((a,b)=>b[1]-a[1])[0][0];
+  }
+  const hasSteps = s.steps.some(v => v > 0);
+  const walking = hasSteps ? deriveWalkingFromSteps(s) : cleanWalkingIntervals(walkStarts, walkStops, duration);
+  const sortedRnds = Object.keys(roundScoreTimes).map(Number).filter(r=>!deletedRounds.has(r)).sort((a,b)=>a-b);
+  const rounds = sortedRnds.map(r => {
+    const arrows = Object.values(roundArrows[r]||{}).sort((a,b)=>a.shotNumber-b.shotNumber);
+    const hrV = roundHrVals[r]||[], holdV = roundHoldVals[r]||[];
+    const confirmedScore = r in roundScores ? roundScores[r] : null;
+    let displayScore = confirmedScore;
+    if (displayScore === null && arrows.length) displayScore = arrows.filter(a=>a.zone!=='DNS').reduce((s,a)=>s+a.score,0);
+    if (displayScore === null) displayScore = 0;
+    return { number: r, arrows, confirmedScore, displayScore,
+      avgHr: hrV.length ? hrV.reduce((a,b)=>a+b,0)/hrV.length : null,
+      avgHoldMs: holdV.length ? Math.round(holdV.reduce((a,b)=>a+b,0)/holdV.length) : null };
+  });
+  return { sensor: s, n, hr, walking, duration, rounds, arrowsPerRound,
+    shots: [], roundAnalytics: [], shotZScores: [],
+    gxD: null, gyD: null, gzD: null, rollD: null, pitchD: null, yawD: null, gzStdev: null,
+    gzDdt: null, gxDdt: null, yawDdt: null, pitchDdt: null, rollDdt: null, stabScore: null };
+}
+function pf(c, i, def=null) { if (i >= c.length) return def; const v = parseFloat(c[i]); return isNaN(v) ? def : v; }
+function pi(c, i, def=null) { if (i >= c.length) return def; const v = parseInt(c[i]); return isNaN(v) ? def : v; }
+
+// ═══════════════ WALKING DETECTION ═══════════════
+function cleanWalkingIntervals(starts, stops, dur) {
+  const res = [], rem = [...stops].sort((a,b)=>a-b);
+  for (const s of [...starts].sort((a,b)=>a-b)) {
+    const match = rem.filter(x=>x>s);
+    if (match.length) { const stop=Math.min(...match); rem.splice(rem.indexOf(stop),1); res.push([s, Math.min(stop, s+90)]); }
+    else res.push([s, Math.min(s+30, dur)]);
+  }
+  return res;
+}
+function deriveWalkingFromSteps(s) {
+  const n = s.time.length, intervals = [];
+  let walkStart = null;
+  for (let i = 0; i < n; i++) {
+    const t = s.time[i];
+    let lo = i; while (lo > 0 && s.time[lo-1] >= t - 5) lo--;
+    const stepsInWin = s.steps[i] - s.steps[lo];
+    if (stepsInWin > 0 && walkStart === null) walkStart = t;
+    else if (stepsInWin <= 0 && walkStart !== null) { intervals.push([walkStart, Math.min(t, walkStart+90)]); walkStart = null; }
+  }
+  if (walkStart !== null) intervals.push([walkStart, Math.min(s.time[n-1], walkStart+90)]);
+  return intervals;
+}
+
+// ═══════════════ SHOT DETECTION ═══════════════
+function computeDdt(arr, times, n, step) {
+  const out = new Float64Array(n);
+  for (let i = step; i < n - step; i++) {
+    const dt = times[i + step] - times[i - step];
+    if (dt > 0.001) out[i] = (arr[i + step] - arr[i - step]) / dt;
+  }
+  for (let i = 0; i < step; i++) out[i] = out[step];
+  for (let i = n - step; i < n; i++) out[i] = out[n - step - 1];
+  return out;
+}
+
+function detectShots(session, params) {
+  const p = params || getParams();
+  const s = session.sensor, n = session.n;
+  if (n < 3) return;
+  const times = s.time, gzRaw = s.gz, rollRaw = s.roll, pitchRaw = s.pitch, yawRaw = s.yaw;
+  const gxRaw = s.gx, gyRaw = s.gy;
+  const dur = Math.max(times[n-1] - times[0], 1);
+  const sps = n / dur;
+  const detrendWin = Math.max(Math.round(p.detrend_win_sec * sps), 3) | 1;
+  const stdevWin = Math.max(Math.round(p.stdev_win_sec * sps), 3) | 1;
+  const halfDW = detrendWin >> 1;
+  const halfSW = stdevWin >> 1;
+
+  function rollingMean(arr, halfW) {
+    const out = new Float64Array(n);
+    const prefix = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + arr[i];
+    for (let i = 0; i < n; i++) {
+      const lo = Math.max(0, i - halfW), hi = Math.min(n - 1, i + halfW);
+      out[i] = (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1);
+    }
+    return out;
+  }
+
+  // Detrend all channels
+  const gzMed = rollingMean(gzRaw, halfDW);
+  const rollMed = rollingMean(rollRaw, halfDW);
+  const pitchMed = rollingMean(pitchRaw, halfDW);
+  const yawMed = rollingMean(yawRaw, halfDW);
+  const gxMed = rollingMean(gxRaw, halfDW);
+  const gyMed = rollingMean(gyRaw, halfDW);
+  const gzD = new Float64Array(n), rollD = new Float64Array(n);
+  const pitchD = new Float64Array(n), yawD = new Float64Array(n);
+  const gxD = new Float64Array(n), gyD = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    gzD[i] = gzRaw[i] - gzMed[i]; rollD[i] = rollRaw[i] - rollMed[i];
+    pitchD[i] = pitchRaw[i] - pitchMed[i]; yawD[i] = yawRaw[i] - yawMed[i];
+    gxD[i] = gxRaw[i] - gxMed[i]; gyD[i] = gyRaw[i] - gyMed[i];
+  }
+
+  // Rolling stdev of gzD
+  const gzStdev = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i - halfSW), hi = Math.min(n - 1, i + halfSW);
+    const cnt = hi - lo + 1; if (cnt < 2) continue;
+    let sum = 0; for (let j = lo; j <= hi; j++) sum += gzD[j];
+    const mean = sum / cnt;
+    let sumSq = 0; for (let j = lo; j <= hi; j++) { const d = gzD[j] - mean; sumSq += d * d; }
+    gzStdev[i] = Math.sqrt(sumSq / cnt);
+  }
+
+  // Derivatives for all channels
+  const DSTEP = 3;
+  const gzDdt    = computeDdt(gzD,    times, n, DSTEP);
+  const gxDdt    = computeDdt(gxD,    times, n, DSTEP);
+  const yawDdt   = computeDdt(yawD,   times, n, DSTEP);
+  const pitchDdt = computeDdt(pitchD, times, n, DSTEP);
+  const rollDdt  = computeDdt(rollD,  times, n, DSTEP);
+
+  // Stability score for chart: gz_ddt (signed, so band is visible)
+  const stabScore = gzDdt;
+
+  // Detection mask: gz_ddt in [min, max] AND gzD >= gz_min_detrended
+  const mask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    mask[i] = (gzDdt[i] >= p.gz_ddt_min && gzDdt[i] <= p.gz_ddt_max && gzD[i] >= p.gz_min_detrended) ? 1 : 0;
+  }
+
+  // Contiguous segments
+  const segs = []; let segStart = -1;
+  for (let i = 0; i < n; i++) {
+    if (mask[i] && segStart < 0) segStart = i;
+    else if (!mask[i] && segStart >= 0) { segs.push([segStart, i-1]); segStart = -1; }
+  }
+  if (segStart >= 0) segs.push([segStart, n-1]);
+
+  // Merge
+  const merged = [];
+  for (const seg of segs) {
+    if (merged.length && times[seg[0]] - times[merged[merged.length-1][1]] <= p.merge_gap_sec) {
+      merged[merged.length-1][1] = seg[1];
+    } else { merged.push([...seg]); }
+  }
+
+  // Filter + build shots
+  const walking = session.walking || [];
+  const isWalking = (tStart, tEnd) => walking.some(([ws,we]) => tStart < we && tEnd > ws);
+  const shots = []; let lastExit = -999;
+  for (const [si, ei] of merged) {
+    const hold = times[ei] - times[si];
+    if (hold < p.hold_min_sec || hold > p.hold_max_sec) continue;
+    if (times[si] - lastExit < p.cooldown_sec) continue;
+    if (isWalking(times[si], times[ei])) continue;
+    let sum = 0, cnt = ei - si + 1;
+    for (let j = si; j <= ei; j++) sum += gzRaw[j];
+    const gzMeanV = sum / cnt;
+    let sumSq = 0;
+    for (let j = si; j <= ei; j++) { const d = gzRaw[j] - gzMeanV; sumSq += d * d; }
+    const gzStdV = cnt > 1 ? Math.sqrt(sumSq / cnt) : 0;
+    const mid = times[si] + hold / 2;
+    shots.push({ time: mid, startSec: times[si], endSec: times[ei], holdSec: hold,
+      nSamples: cnt, gzMean: gzMeanV, gzStdev: gzStdV, hrAtShot: interpHr(session.hr, mid) });
+    lastExit = times[ei];
+  }
+
+  session.gxD = gxD; session.gyD = gyD;
+  session.gzD = gzD; session.rollD = rollD; session.pitchD = pitchD; session.yawD = yawD;
+  session.gzStdev = gzStdev;
+  session.gzDdt = gzDdt; session.gxDdt = gxDdt; session.yawDdt = yawDdt; session.pitchDdt = pitchDdt; session.rollDdt = rollDdt;
+  session.stabScore = stabScore;
+  session.shots = shots;
+  buildRoundAnalytics(session);
+  computeShotZScores(session);
+}
+
+function interpHr(hr, t) {
+  if (!hr.length) return null;
+  let before = null, after = null;
+  for (const h of hr) { if (h.time <= t) before = h; if (h.time > t && !after) after = h; }
+  if (before && after) { const f = (t - before.time) / (after.time - before.time); return before.bpm + f * (after.bpm - before.bpm); }
+  return before ? before.bpm : after ? after.bpm : null;
+}
+
+function buildRoundAnalytics(session) {
+  const ra = [];
+  if (session.rounds.length) {
+    const nR = session.rounds.length;
+    for (let i = 0; i < nR; i++) {
+      const r = session.rounds[i];
+      const start = (i / nR) * session.duration;
+      const end = ((i + 1) / nR) * session.duration;
+      const rShots = session.shots.filter(s => s.time >= start && s.time <= end);
+      const shotHrs = rShots.map(s=>s.hrAtShot).filter(h=>h!==null);
+      ra.push({ round: r.number, startSec: start, endSec: end, score: r.displayScore,
+        shots: rShots, avgHr: shotHrs.length ? shotHrs.reduce((a,b)=>a+b,0)/shotHrs.length : 0, origRound: r.number });
+    }
+  } else {
+    ra.push({ round: 1, startSec: 0, endSec: session.duration, score: 0, shots: session.shots, avgHr: 0, origRound: 1 });
+  }
+  session.roundAnalytics = ra;
+}
+
+function computeShotZScores(session) {
+  if (!session.shots.length || !session.gzD) { session.shotZScores = []; return; }
+  const times = session.sensor.time, n = session.n;
+  const metrics = ['gzD','gzStdev','rollD','pitchD','yawD'].filter(k => session[k]).map(k => ({ key: k, src: session[k] }));
+  function findIdx(target) {
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; times[mid] < target ? lo = mid + 1 : hi = mid; }
+    return lo;
+  }
+  const holdMeans = session.shots.map(shot => {
+    const jS = findIdx(shot.startSec), jE = Math.min(findIdx(shot.endSec) + 1, n);
+    const means = {};
+    metrics.forEach(m => { let sum = 0; for (let j = jS; j < jE; j++) sum += m.src[j]; means[m.key] = (jE - jS) > 0 ? sum / (jE - jS) : 0; });
+    return means;
+  });
+  const gMean = {}, gStd = {};
+  metrics.forEach(m => {
+    const vals = holdMeans.map(hm => hm[m.key]);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+    gMean[m.key] = mean; gStd[m.key] = Math.sqrt(variance);
+  });
+  session.shotZScores = session.shots.map((_, i) => {
+    let maxZ = 0;
+    metrics.forEach(m => { const std = gStd[m.key]; if (std > 0.001) { const z = Math.abs(holdMeans[i][m.key] - gMean[m.key]) / std; if (z > maxZ) maxZ = z; } });
+    return maxZ;
+  });
+}
+
+function getParams() {
+  return {
+    gz_min_detrended: +$('p-gz-min').value,
+    gz_ddt_min: +$('p-gz-ddt-min').value,
+    gz_ddt_max: +$('p-gz-ddt-max').value,
+    hold_min_sec: +$('p-hold-min').value,
+    hold_max_sec: +$('p-hold-max').value,
+    merge_gap_sec: +$('p-merge').value,
+    cooldown_sec: +$('p-cooldown').value,
+    detrend_win_sec: +$('p-detrend').value,
+    // kept for stdev computation in detectShots
+    gz_stdev_max: 999, stdev_win_sec: 2.0, roll_max_detrended: 999,
+  };
+}
+
+// ═══════════════ TIME COMPRESSION ═══════════════
+function buildCompressedView(session) {
+  const sorted = [...session.walking].sort((a,b) => a[0] - b[0]);
+  // Merge walking intervals + gaps < 15s between them
+  const merged = [];
+  for (const [s, e] of sorted) {
+    if (merged.length && s - merged[merged.length-1][1] < 15) {
+      merged[merged.length-1][1] = Math.max(merged[merged.length-1][1], e);
+    } else { merged.push([s, e]); }
+  }
+  function inWalking(t) { for (const [s, e] of merged) { if (t >= s && t <= e) return true; } return false; }
+  function compress(t) {
+    let sub = 0;
+    for (const [s, e] of merged) { if (e <= t) sub += e - s; else if (s < t) sub += t - s; }
+    return t - sub;
+  }
+  const times = session.sensor.time, n = session.n;
+  const idx = [];
+  for (let i = 0; i < n; i++) { if (!inWalking(times[i])) idx.push(i); }
+  const ct = idx.map(i => compress(times[i]));
+  return { idx, ct, compress, merged };
+}
+
+// ═══════════════ SMOOTHING ═══════════════
+function smooth(arr, win) {
+  if (win <= 1) return arr;
+  const n = arr.length, out = new Array(n), half = win >> 1;
+  const ps = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) ps[i+1] = ps[i] + arr[i];
+  for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i - half), hi = Math.min(n - 1, i + half);
+    out[i] = (ps[hi+1] - ps[lo]) / (hi - lo + 1);
+  }
+  return out;
+}
+
+// ═══════════════ RENDERING ═══════════════
+function render() {
+  if (!S) return;
+  renderMainCharts();
+  renderShotProfiles();
+  updateShotGuidance();
+}
+
+function renderMainCharts() {
+  const cv = buildCompressedView(S);
+  const smoothWin = +$('smooth-slider').value;
+
+  // Pick non-walking samples
+  const pickRaw = (src) => cv.idx.map(i => src[i]);
+  const t = cv.ct;
+
+  // Downsample
+  const MAX = 3000;
+  let dispT = t, dispPick = pickRaw;
+  if (t.length > MAX) {
+    const rawGz = pickRaw(S.gzD);
+    const dsIdx = downsampleIdx(t, rawGz, MAX);
+    dispT = dsIdx.map(j => t[j]);
+    dispPick = (src) => { const full = pickRaw(src); return dsIdx.map(j => full[j]); };
+  }
+
+  const sm = (src) => smooth(dispPick(src), smoothWin);
+  const hasGx = S.sensor.gx.some(v => v !== 0);
+
+  // Accel traces
+  const accelTraces = [];
+  accelTraces.push({ x:dispT, y:sm(S.gzD), mode:'lines', name:'gz_d', line:{color:'#0891B2',width:1.2} });
+  if (S.gzDdt) {
+    accelTraces.push({ x:dispT, y:sm(S.gzDdt), mode:'lines', name:'gz_ddt', line:{color:'#F97316',width:1,dash:'dot'}, opacity:0.85 });
+  }
+  if (hasGx) {
+    accelTraces.push({ x:dispT, y:sm(S.gxD), mode:'lines', name:'gx_d', line:{color:'#EF4444',width:1} });
+    accelTraces.push({ x:dispT, y:sm(S.gyD), mode:'lines', name:'gy_d', line:{color:'#16A34A',width:1} });
+  }
+
+  // Gyro traces
+  const gyroTraces = [
+    { x:dispT, y:sm(S.yawD), mode:'lines', name:'yaw', line:{color:'#D97706',width:1} },
+    { x:dispT, y:sm(S.pitchD), mode:'lines', name:'pitch', line:{color:'#0D9488',width:1} },
+    { x:dispT, y:sm(S.rollD), mode:'lines', name:'roll', line:{color:'#7C3AED',width:1} },
+  ];
+
+  // Shot shapes
+  const zScores = S.shotZScores || [];
+  function shotShapes() {
+    const shapes = [];
+    S.shots.forEach((shot, i) => {
+      const cs = cv.compress(shot.startSec), ce = cv.compress(shot.endSec);
+      const isOutlier = (zScores[i] || 0) > 2.5;
+      shapes.push({ type:'rect', x0:cs, x1:ce, y0:0, y1:1, xref:'x', yref:'y domain',
+        fillcolor: isOutlier ? 'rgba(239,68,68,0.2)' : 'rgba(8,145,178,0.18)',
+        line:{ color: isOutlier ? 'rgba(239,68,68,0.6)' : 'rgba(8,145,178,0.45)', width:1 } });
+    });
+    return shapes;
+  }
+
+  const chartLayout = (title, shapes) => ({
+    paper_bgcolor: '#F8FAFC', plot_bgcolor: 'white',
+    font: { color: '#475569', size: 11 },
+    margin: { l: 50, r: 20, t: 30, b: 30 },
+    height: 300,
+    title: { text: title, font: { size: 13, color: '#1E293B' } },
+    showlegend: true, legend: { font:{size:10}, bgcolor:'rgba(0,0,0,0)', x:1, xanchor:'right' },
+    hovermode: 'x unified', shapes,
+    xaxis: { gridcolor:'#E2E8F0', title:{text:'Time (s)',font:{size:10}} },
+    yaxis: { gridcolor:'#E2E8F0' },
+  });
+
+  Plotly.react('chart-accel', accelTraces, chartLayout('Acceleration (detrended)', shotShapes()),
+    { responsive:true, displayModeBar:true, modeBarButtonsToRemove:['lasso2d','select2d'] });
+  Plotly.react('chart-gyro', gyroTraces, chartLayout('Gyroscope (detrended)', shotShapes()),
+    { responsive:true, displayModeBar:true, modeBarButtonsToRemove:['lasso2d','select2d'] });
+
+  // Stability chart — max |ddt| across all channels, threshold line if set
+  if (S.stabScore) {
+    const p = getParams();
+    const stabY = cv.idx.map(i => S.stabScore[i]);
+    const stabTraces = [{ x:dispT, y:stabY, mode:'lines', name:'gz_ddt', line:{color:'#F97316',width:1.2} }];
+    const stabShapes = [...shotShapes()];
+    stabShapes.push({ type:'line', x0:dispT[0], x1:dispT[dispT.length-1], y0:p.gz_ddt_min, y1:p.gz_ddt_min, xref:'x', yref:'y', line:{color:'rgba(34,211,238,0.7)',width:1.5,dash:'dash'} });
+    stabShapes.push({ type:'line', x0:dispT[0], x1:dispT[dispT.length-1], y0:p.gz_ddt_max, y1:p.gz_ddt_max, xref:'x', yref:'y', line:{color:'rgba(239,68,68,0.7)',width:1.5,dash:'dash'} });
+    const stabLayout = { ...chartLayout('gz_ddt  (cyan = min bound, red = max bound)', stabShapes), height:200 };
+    Plotly.react('chart-stab', stabTraces, stabLayout, { responsive:true, displayModeBar:false });
+  } else {
+    $('chart-stab').innerHTML = '';
+  }
+}
+
+function renderShotProfiles() {
+  if (!S || !S.shots.length || !S.gzD) {
+    ['gzD','gzDdt'].forEach(k => { $('overlay-'+k).innerHTML = ''; });
+    return;
+  }
+  const times = S.sensor.time, n = S.n;
+  const PAD = 3, maxShots = Math.min(S.shots.length, 30);
+  const zScores = S.shotZScores || [];
+  function findIdx(target) {
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; times[mid] < target ? lo = mid + 1 : hi = mid; }
+    return lo;
+  }
+
+  const p = getParams();
+  const overlays = [
+    { key:'gzD',   src:S.gzD,   label:'gz_d',   color:'#0891B2', threshold:p.gz_min_detrended, threshDir:'min' },
+    { key:'gzDdt', src:S.gzDdt, label:'gz_ddt', color:'#F97316', threshold2:[p.gz_ddt_min, p.gz_ddt_max] },
+  ];
+
+  for (const ov of overlays) {
+    if (!ov.src) { $('overlay-'+ov.key).innerHTML = ''; continue; }
+    const traces = [];
+    for (let i = 0; i < maxShots; i++) {
+      const shot = S.shots[i];
+      const halfHold = shot.holdSec / 2;
+      const jS = findIdx(shot.time - halfHold - PAD);
+      const jE = Math.min(findIdx(shot.time + halfHold + PAD) + 1, n);
+      const relTime = [], vals = [];
+      for (let j = jS; j < jE; j++) { relTime.push(times[j] - shot.time); vals.push(ov.src[j]); }
+      const isOutlier = (zScores[i] || 0) > 2.5;
+      const r = parseInt(ov.color.slice(1,3),16), g = parseInt(ov.color.slice(3,5),16), b = parseInt(ov.color.slice(5,7),16);
+      traces.push({ x:relTime, y:vals, type:'scatter', mode:'lines',
+        line:{ color:`rgba(${r},${g},${b},${isOutlier ? 0.35 : 0.18})`, width:1 },
+        showlegend:false, hoverinfo:'skip' });
+    }
+    const shapes = [];
+    if (ov.threshold !== undefined) {
+      shapes.push({ type:'line', x0:-PAD-2, x1:PAD+2, y0:ov.threshold, y1:ov.threshold,
+        xref:'x', yref:'y', line:{color:'rgba(239,68,68,0.5)',width:1.5,dash:'dash'} });
+    }
+    if (ov.threshold2) {
+      const [lo, hi] = ov.threshold2;
+      shapes.push({ type:'line', x0:-PAD-2, x1:PAD+2, y0:lo, y1:lo, xref:'x', yref:'y', line:{color:'rgba(34,211,238,0.5)',width:1.5,dash:'dash'} });
+      shapes.push({ type:'line', x0:-PAD-2, x1:PAD+2, y0:hi, y1:hi, xref:'x', yref:'y', line:{color:'rgba(239,68,68,0.5)',width:1.5,dash:'dash'} });
+    }
+    Plotly.react('overlay-'+ov.key, traces, {
+      paper_bgcolor:'#1E293B', plot_bgcolor:'#0F172A',
+      font:{color:'#64748B',size:9}, margin:{l:35,r:5,t:14,b:4},
+      height:80, showlegend:false, hovermode:false, shapes,
+      title:{text:ov.label,font:{size:9,color:'#94A3B8'},x:0.02,xanchor:'left'},
+      xaxis:{showticklabels:false,gridcolor:'rgba(51,65,85,0.3)',zeroline:true,zerolinecolor:'rgba(248,250,252,0.1)'},
+      yaxis:{gridcolor:'rgba(51,65,85,0.3)'},
+    }, { displayModeBar:false });
+  }
+}
+
+function downsampleIdx(times, values, maxPts) {
+  const n = times.length;
+  const bucketSize = Math.max(Math.floor(n / (maxPts / 2)), 1);
+  const indices = [0];
+  for (let b = 0; b < n; b += bucketSize) {
+    const end = Math.min(b + bucketSize, n);
+    let iMin = b, iMax = b;
+    for (let j = b + 1; j < end; j++) {
+      if (values[j] < values[iMin]) iMin = j;
+      if (values[j] > values[iMax]) iMax = j;
+    }
+    const lo = Math.min(iMin, iMax), hi = Math.max(iMin, iMax);
+    if (lo !== indices[indices.length-1]) indices.push(lo);
+    if (hi !== lo) indices.push(hi);
+  }
+  if (indices[indices.length-1] !== n-1) indices.push(n-1);
+  return indices;
+}
+
+// ═══════════════ SHOT GUIDANCE ═══════════════
+function getExpectedShots() {
+  const input = $('expected-shots').value;
+  if (input !== '' && !isNaN(+input)) return +input;
+  if (!S) return null;
+  const total = S.rounds.reduce((s,r) => s + r.arrows.filter(a => a.zone !== 'DNS').length, 0);
+  return total > 0 ? total : null;
+}
+function updateShotGuidance() {
+  const el = $('shot-guidance');
+  if (!S) { el.innerHTML = ''; return; }
+  const expected = getExpectedShots(), detected = S.shots.length;
+  if (expected === null) { el.innerHTML = `<div>Detected: <b style="color:#0891B2">${detected}</b></div>`; return; }
+  const diff = detected - expected;
+  let html = '';
+  if (diff === 0) {
+    html = `<div class="match">${detected} / ${expected}</div>`;
+  } else if (diff > 0) {
+    html = `<div class="over">${detected} / ${expected} (+${diff})</div>`;
+    html += `<div class="hint"><b>↑ gz_min</b> <b>↓ stdev_max</b> <b>↑ hold_min</b> <b>↑ cooldown</b></div>`;
+  } else {
+    html = `<div class="under">${detected} / ${expected} (${diff})</div>`;
+    html += `<div class="hint"><b>↓ gz_min</b> <b>↑ stdev_max</b> <b>↑ roll_max</b> <b>↓ hold_min</b></div>`;
+  }
+  el.innerHTML = html;
+}
+
+// ═══════════════ PROFILES ═══════════════
+function saveProfile() {
+  const name = $('profile-name').value.trim(); if (!name) return;
+  const profiles = JSON.parse(localStorage.getItem('aw_profiles') || '{}');
+  profiles[name] = getParams();
+  localStorage.setItem('aw_profiles', JSON.stringify(profiles));
+  $('profile-name').value = '';
+  loadProfileList();
+}
+function loadProfileList() {
+  const profiles = JSON.parse(localStorage.getItem('aw_profiles') || '{}');
+  const sel = $('profile-select');
+  sel.innerHTML = '<option value="">Default</option>';
+  Object.keys(profiles).forEach(name => { sel.innerHTML += `<option value="${name}">${name}</option>`; });
+}
+function loadProfile() {
+  const name = $('profile-select').value; if (!name) return;
+  const profiles = JSON.parse(localStorage.getItem('aw_profiles') || '{}');
+  const p = profiles[name]; if (!p) return;
+  $('p-gz-min').value = p.gz_min_detrended ?? 2.0; $('sl-gz-min').value = p.gz_min_detrended ?? 2.0;
+  $('p-gz-stdev').value = p.gz_stdev_max ?? 1.0; $('sl-gz-stdev').value = p.gz_stdev_max ?? 1.0;
+  $('p-roll-max').value = p.roll_max_detrended ?? -0.5; $('sl-roll-max').value = p.roll_max_detrended ?? -0.5;
+  $('p-hold-min').value = p.hold_min_sec ?? 3.0;
+  $('p-hold-max').value = p.hold_max_sec ?? 14.0;
+  $('p-merge').value = p.merge_gap_sec ?? 1.0;
+  $('p-cooldown').value = p.cooldown_sec ?? 2.0;
+  $('p-detrend').value = p.detrend_win_sec ?? 60;
+  $('p-stdev-win').value = p.stdev_win_sec ?? 2.0;
+  if (S) renderShotProfiles();
+}
+
+// ═══════════════ ACTIONS ═══════════════
+function redetect() {
+  if (!S) return;
+  showLoading(true);
+  setTimeout(() => { detectShots(S); render(); showLoading(false); }, 10);
+}
+function refineDetection() {
+  if (!S || !S.shots.length || !S.shotZScores) return;
+  showLoading(true);
+  setTimeout(() => {
+    const zScores = S.shotZScores;
+    const nonOutliers = S.shots.filter((_, i) => zScores[i] <= 2.5);
+    if (!nonOutliers.length) { showLoading(false); return; }
+    const times = S.sensor.time, n = S.n;
+    function findIdx(target) { let lo = 0, hi = n - 1; while (lo < hi) { const mid = (lo + hi) >> 1; times[mid] < target ? lo = mid + 1 : hi = mid; } return lo; }
+    const stats = { gzDMin:[], gzStdevMax:[], rollDMax:[], holds:[] };
+    for (const shot of nonOutliers) {
+      const jS = findIdx(shot.startSec), jE = Math.min(findIdx(shot.endSec) + 1, n);
+      let gzMin = Infinity, stdevMax = -Infinity, rollMax = -Infinity;
+      for (let j = jS; j < jE; j++) {
+        if (S.gzD[j] < gzMin) gzMin = S.gzD[j];
+        if (S.gzStdev && S.gzStdev[j] > stdevMax) stdevMax = S.gzStdev[j];
+        if (S.rollD && S.rollD[j] > rollMax) rollMax = S.rollD[j];
+      }
+      stats.gzDMin.push(gzMin); stats.gzStdevMax.push(stdevMax); stats.rollDMax.push(rollMax); stats.holds.push(shot.holdSec);
+    }
+    const margin = 0.3, np = getParams();
+    np.gz_min_detrended = +(Math.min(...stats.gzDMin) - margin).toFixed(2);
+    np.gz_stdev_max = +(Math.max(...stats.gzStdevMax) + margin).toFixed(2);
+    np.roll_max_detrended = +(Math.max(...stats.rollDMax) + margin).toFixed(2);
+    np.hold_min_sec = +Math.max(Math.min(...stats.holds) - 1, 0.5).toFixed(1);
+    np.hold_max_sec = +(Math.max(...stats.holds) + 2).toFixed(1);
+    setParamUI(np);
+    detectShots(S, np); render(); showLoading(false);
+  }, 10);
+}
+function autoTune() {
+  if (!S) return;
+  const expected = getExpectedShots();
+  if (expected === null || expected <= 0) { alert('Enter expected shot count'); return; }
+  showLoading(true);
+  setTimeout(() => {
+    const base = getParams(); let best = { ...base }, bestDiff = Infinity;
+    const gzMins = [0.5,1.0,1.5,2.0,2.5,3.0,3.5,4.0];
+    const gzStdevs = [0.3,0.5,0.7,1.0,1.3,1.6,2.0];
+    const rollMaxes = [-2.0,-1.5,-1.0,-0.5,0.0,0.5,1.0];
+    const holdMins = [1.0,2.0,3.0,4.0,5.0];
+    const cooldowns = [1.0,2.0,3.0,4.0];
+    for (const gm of gzMins) { for (const gs of gzStdevs) {
+      const p = { ...base, gz_min_detrended:gm, gz_stdev_max:gs }; detectShots(S, p);
+      const diff = Math.abs(S.shots.length - expected);
+      if (diff < bestDiff) { bestDiff = diff; best = { ...p }; }
+      if (diff === 0) break;
+    } if (bestDiff === 0) break; }
+    if (bestDiff > 0) { for (const rm of rollMaxes) { for (const hm of holdMins) { for (const cd of cooldowns) {
+      const p = { ...best, roll_max_detrended:rm, hold_min_sec:hm, cooldown_sec:cd }; detectShots(S, p);
+      const diff = Math.abs(S.shots.length - expected);
+      if (diff < bestDiff) { bestDiff = diff; best = { ...p }; }
+      if (diff === 0) break;
+    } if (bestDiff === 0) break; } if (bestDiff === 0) break; } }
+    setParamUI(best); detectShots(S, best); render(); showLoading(false);
+  }, 10);
+}
+
+function setParamUI(p) {
+  $('p-gz-min').value = p.gz_min_detrended; $('sl-gz-min').value = p.gz_min_detrended;
+  $('p-gz-stdev').value = p.gz_stdev_max; $('sl-gz-stdev').value = p.gz_stdev_max;
+  $('p-roll-max').value = p.roll_max_detrended; $('sl-roll-max').value = p.roll_max_detrended;
+  $('p-hold-min').value = p.hold_min_sec;
+  $('p-hold-max').value = p.hold_max_sec;
+  $('p-cooldown').value = p.cooldown_sec;
+  if (p.ddt_max !== undefined) { $('p-ddt-max').value = p.ddt_max; $('sl-ddt-max').value = p.ddt_max; }
+}
+
+function processFile(file) {
+  showLoading(true);
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    setTimeout(() => {
+      S = parseCSV(e.target.result);
+      if (!S) { alert('Could not parse CSV'); showLoading(false); return; }
+      const totalArrows = S.rounds.reduce((s,r) => s + r.arrows.filter(a => a.zone !== 'DNS').length, 0);
+      $('expected-shots').value = totalArrows > 0 ? totalArrows : '';
+      detectShots(S); render(); showLoading(false);
+      $('drop-zone').textContent = file.name;
+    }, 10);
+  };
+  reader.readAsText(file);
+}
+
+// ═══════════════ UTILITIES ═══════════════
+function $(id) { return document.getElementById(id); }
+function showLoading(show) { $('loading').classList.toggle('active', show); }
+
+// Sync sliders ↔ inputs
+function syncSlider(sliderId, inputId) {
+  $(sliderId).addEventListener('input', () => { $(inputId).value = $(sliderId).value; if (S) renderShotProfiles(); });
+  $(inputId).addEventListener('change', () => { $(sliderId).value = $(inputId).value; if (S) renderShotProfiles(); });
+}
+syncSlider('sl-gz-min', 'p-gz-min');
+syncSlider('sl-gz-ddt-min', 'p-gz-ddt-min');
+syncSlider('sl-gz-ddt-max', 'p-gz-ddt-max');
+
+// ═══════════════ EVENT LISTENERS ═══════════════
+$('file-input').addEventListener('change', (e) => { if (e.target.files[0]) processFile(e.target.files[0]); });
+const dz = $('drop-zone');
+dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('dragover'); if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
+$('smooth-slider').addEventListener('input', () => {
+  const v = +$('smooth-slider').value;
+  $('smooth-val').textContent = v <= 1 ? 'Off' : v;
+  if (S) renderMainCharts();
+});
+$('expected-shots').addEventListener('input', () => { if(S) updateShotGuidance(); });
+$('profile-select').addEventListener('change', loadProfile);
+loadProfileList();
+</script>
+</body>
+</html>

@@ -8,6 +8,8 @@ import com.archery.wear.data.SessionLogger
 import com.archery.wear.sensor.WatchSensorManager
 import com.archery.wear.sync.LiveSyncManager
 import com.archery.wear.sync.PhoneCommandBus
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,11 +30,14 @@ class SessionViewModel : ViewModel() {
     private val _phase = MutableStateFlow(WatchPhase.IDLE)
     val phase: StateFlow<WatchPhase> = _phase.asStateFlow()
 
-    private val _showQuickScore = MutableStateFlow(false)
-    val showQuickScore: StateFlow<Boolean> = _showQuickScore.asStateFlow()
-
     private val _previousRoundInfo = MutableStateFlow<String?>(null)
     val previousRoundInfo: StateFlow<String?> = _previousRoundInfo.asStateFlow()
+
+    private val _walkingSteps = MutableStateFlow(0)
+    val walkingSteps: StateFlow<Int> = _walkingSteps.asStateFlow()
+
+    private val _roundStartMs = MutableStateFlow(0L)
+    val roundStartMs: StateFlow<Long> = _roundStartMs.asStateFlow()
 
     // ── External dependencies (set by Activity) ──────────────────────────────
 
@@ -64,6 +69,8 @@ class SessionViewModel : ViewModel() {
         _session.value = session
         _previousRoundInfo.value = null
         _phase.value = WatchPhase.SHOOTING
+        walkCooldownUntil = 0L
+        setRoundStart(System.currentTimeMillis())
         logger?.startSession()
         liveSyncManager?.sendSessionStart(_arrowsPerRound.value)
     }
@@ -87,43 +94,65 @@ class SessionViewModel : ViewModel() {
     }
 
     fun newSession() {
+        autoSkipJob?.cancel()
+        autoSkipJob = null
         _session.value = null
         _phase.value = WatchPhase.IDLE
         _previousRoundInfo.value = null
+        resetWalking()
     }
 
-    // ── Shot recording ───────────────────────────────────────────────────────
+    // ── Walk-based auto scoring trigger ──────────────────────────────────────
 
-    fun manualShot() {
+    private var walkStepCount = 0
+    private var walkingResetJob: Job? = null
+    private val WALK_STEPS_TO_SCORE  = 25          // conservative: more steps needed to trigger
+    private val WALK_IDLE_RESET_MS   = 20_000L     // longer idle window before resetting counter
+    // Ignore steps for this long after scoring finishes — prevents walk-back from
+    // immediately triggering the next round before any arrows have been shot.
+    private val WALK_COOLDOWN_MS     = 60_000L     // longer cooldown after scoring
+    private var walkCooldownUntil      = 0L
+    private var _roundStartMsInternal  = 0L        // internal mutable; _roundStartMs StateFlow is the observable
+    private val MIN_ROUND_DURATION_MS  = 60_000L   // don't trigger within 60s of round start
+    // If the user never scores/dismisses, auto-skip after this long so the walk
+    // detection can fire again for the next real end.
+    private val SCORING_AUTO_SKIP_MS = 150_000L
+    private var autoSkipJob: Job?    = null
+
+    /** Called by MainActivity on each step detector event. */
+    fun onStepDetected() {
         if (_phase.value != WatchPhase.SHOOTING) return
-        val session = _session.value ?: return
-        val round = session.currentRound ?: return
-        val hr = sensorManager?.heartRate?.value ?: 0f
+        if (_session.value?.currentRound == null) return
         val now = System.currentTimeMillis()
+        if (now < walkCooldownUntil) return
+        if (now - _roundStartMsInternal < MIN_ROUND_DURATION_MS) return
 
-        val shot = WatchShot(number = round.shots.size + 1, heartRate = hr)
-        _session.value = session.updateCurrentRound { it.copy(shots = it.shots + shot) }
+        walkStepCount++
+        _walkingSteps.value = walkStepCount
 
-        _showQuickScore.value = true
-        logger?.logShotDetected(now, round.number, shot.number, 0L, 0f, hr, manual = true)
-        liveSyncManager?.sendShot(round.number, shot.number, 0L, hr, null)
-    }
-
-    fun quickScore(zone: ScoreZone) {
-        val session = _session.value ?: return
-        val round = session.currentRound ?: return
-        val lastShot = round.shots.lastOrNull() ?: return
-
-        val updated = lastShot.copy(quickZone = zone)
-        _session.value = session.updateCurrentRound { r ->
-            r.copy(shots = r.shots.dropLast(1) + updated)
+        // Restart idle timer — if no step arrives within 20s, reset counter
+        walkingResetJob?.cancel()
+        walkingResetJob = viewModelScope.launch {
+            delay(WALK_IDLE_RESET_MS)
+            resetWalking()
         }
-        _showQuickScore.value = false
-        logger?.logQuickScore(System.currentTimeMillis(), round.number, lastShot.number, zone)
+
+        if (walkStepCount >= WALK_STEPS_TO_SCORE) {
+            resetWalking()
+            enterScoring()
+        }
     }
 
-    fun dismissQuickScore() {
-        _showQuickScore.value = false
+    private fun setRoundStart(ms: Long) {
+        _roundStartMsInternal = ms
+        _roundStartMs.value = ms
+    }
+
+    private fun resetWalking() {
+        walkingResetJob?.cancel()
+        walkingResetJob = null
+        walkStepCount = 0
+        _walkingSteps.value = 0
     }
 
     // ── Scoring phase ─────────────────────────────────────────────────────────
@@ -143,8 +172,12 @@ class SessionViewModel : ViewModel() {
         _session.value = session.updateCurrentRound { r ->
             r.copy(shots = r.shots + extraShots)
         }
-        _showQuickScore.value = false
         _phase.value = WatchPhase.SCORING
+        autoSkipJob?.cancel()
+        autoSkipJob = viewModelScope.launch {
+            delay(SCORING_AUTO_SKIP_MS)
+            if (_phase.value == WatchPhase.SCORING) finishScoring()
+        }
 
         for (i in beforeCount until target) {
             logger?.logShotDetected(now, round.number, i + 1, 0L, 0f, 0f, manual = true)
@@ -224,6 +257,11 @@ class SessionViewModel : ViewModel() {
             sync?.sendRoundSensorData(capturedRound, sensorBytes, hrBytes)
         }
 
+        autoSkipJob?.cancel()
+        autoSkipJob = null
+        resetWalking()
+        walkCooldownUntil = now + WALK_COOLDOWN_MS
+        setRoundStart(now)
         val nextRound = WatchRound(number = session.rounds.size + 1)
         _session.value = session.copy(rounds = session.rounds + nextRound)
         _phase.value = WatchPhase.SHOOTING
@@ -231,6 +269,20 @@ class SessionViewModel : ViewModel() {
     }
 
     fun skipScoring() = finishScoring()
+
+    /** Crown backward on scoring screen — return to shooting without advancing the round. */
+    fun cancelScoring() {
+        if (_phase.value != WatchPhase.SCORING) return
+        autoSkipJob?.cancel()
+        autoSkipJob = null
+        // Remove the placeholder shots that enterScoring() added so the round is clean
+        val session = _session.value ?: return
+        _session.value = session.updateCurrentRound { r ->
+            r.copy(shots = r.shots.filter { it.finalZone != null || it.quickZone != null })
+        }
+        _phase.value = WatchPhase.SHOOTING
+        liveSyncManager?.sendPhaseChange("SHOOTING", session.currentRound?.number ?: 1)
+    }
 
     // ── HR ────────────────────────────────────────────────────────────────────
 

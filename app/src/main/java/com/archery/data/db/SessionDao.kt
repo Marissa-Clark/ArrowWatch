@@ -65,6 +65,9 @@ interface SessionDao {
     @Query("UPDATE sessions SET displayName = :name WHERE id = :sessionId")
     suspend fun renameSession(sessionId: Long, name: String?): Int
 
+    @Query("UPDATE sessions SET dateMs = :dateMs WHERE id = :sessionId")
+    suspend fun updateSessionDate(sessionId: Long, dateMs: Long): Int
+
     @Query("UPDATE rounds SET confirmedScore = :score WHERE sessionId = :sessionId AND roundNumber = :roundNumber")
     suspend fun updateRoundScore(sessionId: Long, roundNumber: Int, score: Float): Int
 
@@ -78,6 +81,15 @@ interface SessionDao {
         ) AND shotNumber = :shotNumber
     """)
     suspend fun updateArrowScore(sessionId: Long, roundNumber: Int, shotNumber: Int, zone: String, score: Float): Int
+
+    @Query("UPDATE rounds SET avgHoldMs = :holdMs WHERE sessionId = :sessionId AND roundNumber = :roundNumber")
+    suspend fun updateRoundHoldMs(sessionId: Long, roundNumber: Int, holdMs: Long): Int
+
+    @Query("UPDATE sessions SET analyticsLocked = :locked WHERE id = :sessionId")
+    suspend fun setAnalyticsLocked(sessionId: Long, locked: Boolean): Int
+
+    @Query("UPDATE sessions SET distanceM = :distanceM, targetSizeCm = :targetSizeCm WHERE id = :sessionId")
+    suspend fun updateDistanceTarget(sessionId: Long, distanceM: Int?, targetSizeCm: Int?): Int
 
     @Query("SELECT EXISTS(SELECT 1 FROM sessions WHERE fileName = :fileName)")
     suspend fun sessionExists(fileName: String): Boolean

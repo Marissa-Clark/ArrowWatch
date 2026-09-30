@@ -12,6 +12,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.archery.ui.live.LiveScoringScreen
 import com.archery.ui.sessions.AnalyticsScreen
+import com.archery.ui.sessions.LogSessionScreen
+import com.archery.ui.sessions.ManageProfilesScreen
 import com.archery.ui.sessions.SessionDetailScreen
 import com.archery.ui.sessions.SessionListScreen
 import com.archery.ui.theme.ArcheryTheme
@@ -35,9 +37,26 @@ private fun ArcheryApp() {
     NavHost(navController = navController, startDestination = "sessions") {
         composable("sessions") {
             SessionListScreen(
-                onSessionClick = { id -> navController.navigate("session/$id") },
+                onSessionClick     = { id -> navController.navigate("session/$id") },
                 onLiveSessionClick = { navController.navigate("live") },
+                onManageProfiles   = { navController.navigate("profiles") },
+                onLogPastSession   = { navController.navigate("log_session") },
             )
+        }
+
+        composable("log_session") {
+            LogSessionScreen(
+                onBack  = { navController.popBackStack() },
+                onSaved = { id ->
+                    // Pop log_session, then open the new session detail
+                    navController.popBackStack()
+                    navController.navigate("session/$id")
+                },
+            )
+        }
+
+        composable("profiles") {
+            ManageProfilesScreen(onBack = { navController.popBackStack() })
         }
 
         composable(

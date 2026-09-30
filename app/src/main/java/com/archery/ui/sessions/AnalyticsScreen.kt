@@ -2,6 +2,7 @@ package com.archery.ui.sessions
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,42 +46,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.archery.analytics.DetectedShot
+import com.archery.analytics.DetectionProfile
 import com.archery.analytics.HrPoint
 import com.archery.analytics.RoundAnalytics
 import com.archery.analytics.SensorSample
 import com.archery.analytics.SessionAnalytics
 import com.archery.shared.RoundSummary
 import com.archery.shared.ScoreZone
+import com.archery.ui.theme.*
 import java.time.format.DateTimeFormatter
 import kotlin.math.sqrt
 
-private val ABgPage        = Color(0xFFF8FAFC)
 private val ABgWhite       = Color.White
-private val AHeaderDark    = Color(0xFF1E293B)
-private val AHeaderDarker  = Color(0xFF0F172A)
-private val ATextPrimary   = Color(0xFF1E293B)
-private val ATextSecondary = Color(0xFF475569)
-private val ATextMuted     = Color(0xFF94A3B8)
-private val ATextSlate300  = Color(0xFFCBD5E1)
-private val ACyan400       = Color(0xFF22D3EE)
-private val ACyan600       = Color(0xFF0891B2)
-private val ACyan100       = Color(0xFFCFFAFE)
-private val ACyan800       = Color(0xFF155E75)
-private val AAmber600      = Color(0xFFD97706)
-private val AAmber100      = Color(0xFFFEF3C7)
-private val AAmber800      = Color(0xFF92400E)
 private val ARed500        = Color(0xFFEF4444)
-private val ABorderLight   = Color(0xFFE2E8F0)
-private val AHrPink        = Color(0xFFEC4899)
 private val AGzColor       = Color(0xFF8B5CF6)
-private val ASlate100      = Color(0xFFF1F5F9)
-private val AAmber700      = Color(0xFFB45309)
 
 // Semantic analytics colors — consistent across all charts
 private val AScoreBlue     = Color(0xFF2563EB)   // score = blue
@@ -88,9 +74,10 @@ private val AScoreBlue100  = Color(0xFFDBEAFE)
 private val AScoreBlue800  = Color(0xFF1E40AF)
 private val AHrRed         = Color(0xFFDC2626)   // HR = red
 private val AHrRed100      = Color(0xFFFEE2E2)
-private val AHoldGold      = Color(0xFFD97706)   // hold time = gold (= AAmber600)
-private val AHoldGold100   = Color(0xFFFEF3C7)   // (= AAmber100)
-private val AHoldGold800   = Color(0xFF92400E)   // (= AAmber800)
+// hold time = gold — aliases for AppAmber* to make semantic intent clear in chart code
+private val AHoldGold      = AppAmber600
+private val AHoldGold100   = AppAmber100
+private val AHoldGold800   = AppAmber800
 
 @Composable
 fun AnalyticsScreen(
@@ -108,43 +95,59 @@ fun AnalyticsScreen(
     val analytics by vm.analytics.collectAsState()
     val isAnalyticsLoading by vm.isAnalyticsLoading.collectAsState()
     val dismissedState by vm.dismissedState.collectAsState()
+    val manualShots by vm.manualShots.collectAsState()
+    val activeProfile by vm.activeProfile.collectAsState()
+    val suggestion by vm.suggestion.collectAsState()
 
     Column(
-        Modifier.fillMaxSize().background(ABgPage).verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize().background(AppBgPage).verticalScroll(rememberScrollState())
     ) {
         // Dark gradient header
         Box(
             Modifier.fillMaxWidth()
-                .background(Brush.horizontalGradient(listOf(AHeaderDark, AHeaderDarker)))
+                .background(Brush.horizontalGradient(listOf(AppHeaderDark, AppHeaderDarker)))
                 .padding(start = 20.dp, end = 20.dp, top = statusBarTop + 12.dp, bottom = 24.dp)
         ) {
             Column {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Back", fontSize = 14.sp, color = ATextSlate300,
+                    Text("Back", fontSize = 14.sp, color = AppTextSlate300,
                         modifier = Modifier.clickable { onBack() }.padding(vertical = 4.dp))
-                    // Refresh button — re-parses CSV; hidden while already loading
-                    if (!isAnalyticsLoading) {
-                        Text("↺ Refresh", fontSize = 13.sp, color = ACyan400,
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        // Lock toggle — "good session" flag
+                        val locked = session?.analyticsLocked == true
+                        Text(
+                            if (locked) "🔒 Locked" else "🔓 Lock",
+                            fontSize = 13.sp,
+                            color = if (locked) AHoldGold else AppTextSlate300,
                             modifier = Modifier
-                                .clickable { vm.refreshAnalytics() }
-                                .padding(vertical = 4.dp, horizontal = 4.dp))
+                                .clickable { vm.lockAnalytics(!locked) }
+                                .padding(vertical = 4.dp, horizontal = 4.dp),
+                        )
+                        // Refresh — hidden while loading or locked
+                        if (!isAnalyticsLoading && !locked) {
+                            Text("↺ Refresh", fontSize = 13.sp, color = AppCyan400,
+                                modifier = Modifier
+                                    .clickable { vm.refreshAnalytics() }
+                                    .padding(vertical = 4.dp, horizontal = 4.dp))
+                        }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
                 Text("Sensor Analytics", fontSize = 22.sp, fontWeight = FontWeight.Bold,
                     color = Color.White)
                 Spacer(Modifier.height(4.dp))
-                Text(session?.date?.format(formatter) ?: "", fontSize = 14.sp, color = ATextSlate300)
+                Text(session?.date?.format(formatter) ?: "", fontSize = 14.sp, color = AppTextSlate300)
                 Spacer(Modifier.height(4.dp))
                 when {
                     analytics != null -> analytics?.let { a ->
                         Text("${a.allShots.size} detected shots · ${a.roundAnalytics.size} rounds",
-                            fontSize = 12.sp, color = ACyan400)
+                            fontSize = 12.sp, color = AppCyan400)
                     }
                     isAnalyticsLoading ->
                         Text("Analyzing sensor data…", fontSize = 12.sp,
-                            color = ATextMuted.copy(alpha = 0.7f))
+                            color = AppTextMuted.copy(alpha = 0.7f))
                 }
             }
         }
@@ -152,7 +155,7 @@ fun AnalyticsScreen(
         val s = session
         if (s == null) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text("Loading…", color = ATextMuted)
+                Text("Loading…", color = AppTextMuted)
             }
             return@Column
         }
@@ -189,21 +192,21 @@ fun AnalyticsScreen(
 
             // Summary bar charts
             if (scoreBars.size >= 2) {
-                RoundBarChart(
+                RoundLineChart(
                     title = "Avg Score / Arrow",
-                    subtitle = "per round  ±1σ whiskers",
+                    subtitle = "per round  ±1σ shading",
                     bars = scoreBars,
-                    barColor = AScoreBlue,
+                    lineColor = AScoreBlue,
                     yLabel = { "%.1f".format(it) },
                 )
                 Spacer(Modifier.height(12.dp))
             }
             if (holdBars.size >= 2) {
-                RoundBarChart(
+                RoundLineChart(
                     title = "Avg Hold Time",
-                    subtitle = "seconds per round  ±1σ whiskers",
+                    subtitle = "seconds per round  ±1σ shading",
                     bars = holdBars,
-                    barColor = AHoldGold,
+                    lineColor = AHoldGold,
                     yLabel = { "%.1fs".format(it) },
                 )
                 Spacer(Modifier.height(12.dp))
@@ -215,17 +218,17 @@ fun AnalyticsScreen(
                         contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             if (isAnalyticsLoading) {
-                                Text("Analyzing sensor data…", fontSize = 16.sp, color = ATextSecondary)
+                                Text("Analyzing sensor data…", fontSize = 16.sp, color = AppTextSecondary)
                                 Spacer(Modifier.height(8.dp))
                                 Text("Large sessions may take a few seconds",
-                                    fontSize = 13.sp, color = ATextMuted,
+                                    fontSize = 13.sp, color = AppTextMuted,
                                     textAlign = TextAlign.Center)
                             } else {
-                                Text("No sensor data available", fontSize = 16.sp, color = ATextSecondary)
+                                Text("No sensor data available", fontSize = 16.sp, color = AppTextSecondary)
                                 Spacer(Modifier.height(8.dp))
                                 Text(
                                     "Sensor analytics require a CSV with sensor data recorded during the session.",
-                                    fontSize = 13.sp, color = ATextMuted,
+                                    fontSize = 13.sp, color = AppTextMuted,
                                     textAlign = TextAlign.Center,
                                 )
                             }
@@ -235,7 +238,7 @@ fun AnalyticsScreen(
                     // Charts from arrow data are showing, but sensor analysis still loading
                     Box(Modifier.fillMaxWidth().padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center) {
-                        Text("Analyzing sensor data…", fontSize = 13.sp, color = ATextMuted)
+                        Text("Analyzing sensor data…", fontSize = 13.sp, color = AppTextMuted)
                     }
                 }
                 Spacer(Modifier.height(16.dp))
@@ -292,14 +295,39 @@ fun AnalyticsScreen(
                 Spacer(Modifier.height(16.dp))
             }
 
+            // Current detection thresholds summary
+            val isLocked = s.analyticsLocked
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "gz_ddt [${activeProfile.gzDdtMin}, ${activeProfile.gzDdtMax}]  " +
+                    "hold ≥ ${activeProfile.holdMinSec}s  gz_d ≥ ${activeProfile.gzMinDetrended}",
+                    fontSize = 11.sp, color = AppTextMuted,
+                    modifier = Modifier.weight(1f),
+                )
+                if (isLocked) {
+                    Text("🔒 locked", fontSize = 11.sp, color = AHoldGold,
+                        modifier = Modifier.padding(start = 8.dp))
+                } else {
+                    Text("↺ Refresh", fontSize = 12.sp, color = AppCyan600,
+                        modifier = Modifier
+                            .clickable { vm.refreshAnalytics() }
+                            .padding(start = 8.dp, top = 4.dp, bottom = 4.dp))
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
             // Per-round analytics — iterate analytics rounds as the source of truth.
             // Falls back to an empty RoundSummary shell if the DB round is missing
             // (e.g. session stored before arrows were parsed correctly).
             if (a.roundAnalytics.isNotEmpty()) {
                 Text("Per Round", fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
-                    color = ATextPrimary)
+                    color = AppHeaderDark)
                 Spacer(Modifier.height(4.dp))
-                Text("Tap a round to expand sensor charts", fontSize = 12.sp, color = ATextMuted)
+                Text("Tap a round to expand sensor charts", fontSize = 12.sp, color = AppTextMuted)
                 Spacer(Modifier.height(12.dp))
                 a.roundAnalytics.forEach { ra ->
                     // Try to find the matching DB round; fall back to an empty shell so
@@ -314,12 +342,17 @@ fun AnalyticsScreen(
                             avgHoldMs = null,
                         )
                     val dismissed = dismissedState[ra.origCsvRound] ?: emptySet()
+                    val manual = manualShots[ra.origCsvRound] ?: emptyList()
                     RoundAnalyticsCard(
                         round = round,
                         ra = ra,
                         dismissedShotIndices = dismissed,
+                        manualShotTimes = manual,
+                        profile = activeProfile,
                         onDismissShot = { i -> vm.dismissShot(ra.origCsvRound, i, s.filePath) },
                         onRestoreShot = { i -> vm.restoreShot(ra.origCsvRound, i, s.filePath) },
+                        onFlagMissedAt = { timeSec -> vm.flagMissedShot(ra.origCsvRound, timeSec, s.filePath) },
+                        onUnflagManual = { timeSec -> vm.unflagManualShot(ra.origCsvRound, timeSec, s.filePath) },
                     )
                     Spacer(Modifier.height(8.dp))
                 }
@@ -330,39 +363,35 @@ fun AnalyticsScreen(
     }
 }
 
-// ═══════════════ ROUND BAR CHART ═══════════════
+// ═══════════════ ROUND LINE CHART (line + ±1σ shading) ═══════════════
 
 @Composable
-private fun RoundBarChart(
+private fun RoundLineChart(
     title: String,
     subtitle: String,
-    bars: List<Triple<Int, Float, Float>>,  // (roundNumber, avg, stdev)
-    barColor: Color,
+    bars: List<Triple<Int, Float, Float>>,   // (roundNumber, avg, stdev)
+    lineColor: Color,
     yLabel: (Float) -> String,
 ) {
-    val yMax = (bars.maxOf { it.second + it.third } * 1.25f).coerceAtLeast(1f)
+    val yMax = (bars.maxOf { it.second + it.third } * 1.2f).coerceAtLeast(1f)
 
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = ABgWhite),
         shape = RoundedCornerShape(10.dp)) {
         Column(Modifier.padding(14.dp)) {
-            // Title row with color swatch for quick identification
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(barColor))
-                Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = ATextPrimary)
+                Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(lineColor))
+                Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppHeaderDark)
             }
-            Text(subtitle, fontSize = 11.sp, color = ATextMuted)
+            Text(subtitle, fontSize = 11.sp, color = AppTextMuted)
             Spacer(Modifier.height(6.dp))
             Canvas(Modifier.fillMaxWidth().height(130.dp)) {
                 val w = size.width; val h = size.height
                 val padL = 36f; val padT = 10f; val padB = 22f; val padR = 8f
                 val chartW = w - padL - padR; val chartH = h - padT - padB
                 val n = bars.size
-                val slotW = chartW / n
-                val barW = (slotW * 0.6f).coerceAtLeast(8f)
 
                 fun valToY(v: Float) = padT + chartH * (1f - (v / yMax).coerceIn(0f, 1f))
-                val baseY = valToY(0f)
 
                 val labelPaint = android.graphics.Paint().apply {
                     color = android.graphics.Color.rgb(0x94, 0xA3, 0xB8)
@@ -374,51 +403,53 @@ private fun RoundBarChart(
                     textAlign = android.graphics.Paint.Align.CENTER
                 }
 
-                // Grid lines
+                // Grid lines + y labels
                 for (i in 0..3) {
                     val v = yMax * i / 3f
                     val y = valToY(v)
-                    drawLine(ABorderLight, Offset(padL, y), Offset(padL + chartW, y), 0.5f)
+                    drawLine(AppBorderLight, Offset(padL, y), Offset(padL + chartW, y), 0.5f)
                     drawContext.canvas.nativeCanvas.drawText(yLabel(v), 0f, y + 5f, labelPaint)
                 }
 
-                bars.forEachIndexed { idx, (roundNum, avg, stdev) ->
-                    val centerX = padL + slotW * (idx + 0.5f)
-                    val left = centerX - barW / 2f
-                    val right = centerX + barW / 2f
-                    val topY = valToY(avg)
-
-                    // Bar fill with rounded top corners
-                    if (topY < baseY) {
-                        val r = (barW * 0.25f).coerceAtMost(8f)
-                        val barPath = Path().apply {
-                            moveTo(left, baseY)
-                            lineTo(left, topY + r)
-                            quadraticTo(left, topY, left + r, topY)
-                            lineTo(right - r, topY)
-                            quadraticTo(right, topY, right, topY + r)
-                            lineTo(right, baseY)
-                            close()
-                        }
-                        drawPath(barPath, barColor.copy(alpha = 0.7f))
-                    }
-
-                    // ±1σ whiskers
-                    if (stdev > 0f) {
-                        val hiY = valToY((avg + stdev).coerceAtMost(yMax))
-                        val loY = valToY((avg - stdev).coerceAtLeast(0f))
-                        val capW = barW * 0.35f
-                        drawLine(barColor, Offset(centerX, hiY), Offset(centerX, loY), 2f)
-                        drawLine(barColor, Offset(centerX - capW, hiY), Offset(centerX + capW, hiY), 2f)
-                        drawLine(barColor, Offset(centerX - capW, loY), Offset(centerX + capW, loY), 2f)
-                    }
-
-                    // Round label
-                    drawContext.canvas.nativeCanvas.drawText("R$roundNum", centerX, h - 2f, xLabelPaint)
+                // X positions
+                val xs = bars.mapIndexed { idx, _ ->
+                    if (n > 1) padL + chartW * idx / (n - 1f) else padL + chartW / 2f
                 }
 
-                // Baseline — slightly bolder than grid lines for visual anchor
-                drawLine(ATextMuted.copy(alpha = 0.35f), Offset(padL, baseY), Offset(padL + chartW, baseY), 1.5f)
+                // ±1σ shaded band (upper edge forward, lower edge backward → closed polygon)
+                if (n >= 2) {
+                    val band = Path().apply {
+                        // upper edge (mean + stdev), left → right
+                        bars.forEachIndexed { idx, (_, avg, stdev) ->
+                            val y = valToY((avg + stdev).coerceAtMost(yMax))
+                            if (idx == 0) moveTo(xs[idx], y) else lineTo(xs[idx], y)
+                        }
+                        // lower edge (mean - stdev), right → left
+                        bars.indices.reversed().forEach { idx ->
+                            val (_, avg, stdev) = bars[idx]
+                            lineTo(xs[idx], valToY((avg - stdev).coerceAtLeast(0f)))
+                        }
+                        close()
+                    }
+                    drawPath(band, lineColor.copy(alpha = 0.15f))
+                }
+
+                // Mean line
+                val linePath = Path().apply {
+                    bars.forEachIndexed { idx, (_, avg, _) ->
+                        val y = valToY(avg)
+                        if (idx == 0) moveTo(xs[idx], y) else lineTo(xs[idx], y)
+                    }
+                }
+                drawPath(linePath, lineColor, style = Stroke(2.5f))
+
+                // Dots + x labels
+                bars.forEachIndexed { idx, (roundNum, avg, _) ->
+                    val xc = xs[idx]; val yc = valToY(avg)
+                    drawCircle(lineColor, 4.5f, Offset(xc, yc))
+                    drawCircle(ABgWhite, 2.5f, Offset(xc, yc))
+                    drawContext.canvas.nativeCanvas.drawText("R$roundNum", xc, h - 2f, xLabelPaint)
+                }
             }
         }
     }
@@ -438,8 +469,8 @@ private fun HoldTimeVsScoreChart(points: List<Triple<Float, Float, Int>>) {
         shape = RoundedCornerShape(10.dp)) {
         Column(Modifier.padding(14.dp)) {
             Text("Hold Time vs Avg/Arrow", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                color = ATextPrimary)
-            Text("Each dot = 1 round (darker = earlier)", fontSize = 11.sp, color = ATextMuted)
+                color = AppHeaderDark)
+            Text("Each dot = 1 round (darker = earlier)", fontSize = 11.sp, color = AppTextMuted)
             Spacer(Modifier.height(6.dp))
             Canvas(Modifier.fillMaxWidth().height(140.dp)) {
                 val w = size.width; val h = size.height
@@ -449,11 +480,11 @@ private fun HoldTimeVsScoreChart(points: List<Triple<Float, Float, Int>>) {
                 fun scoreToY(v: Float) = padTop + chartH * (1f - (v - scoreMin) / scoreRange)
                 for (i in 0..4) {
                     val v = scoreMin + scoreRange * i / 4f
-                    drawLine(ABorderLight, Offset(padLeft, scoreToY(v)), Offset(padLeft + chartW, scoreToY(v)), 0.5f)
+                    drawLine(AppBorderLight, Offset(padLeft, scoreToY(v)), Offset(padLeft + chartW, scoreToY(v)), 0.5f)
                 }
                 for (i in 0..4) {
                     val v = holdMin + holdRange * i / 4f
-                    drawLine(ABorderLight, Offset(holdToX(v), padTop), Offset(holdToX(v), padTop + chartH), 0.5f)
+                    drawLine(AppBorderLight, Offset(holdToX(v), padTop), Offset(holdToX(v), padTop + chartH), 0.5f)
                 }
                 points.forEach { (hold, score, round) ->
                     val alpha = 1f - (round - 1).toFloat() / totalRounds.coerceAtLeast(2) * 0.75f
@@ -495,8 +526,8 @@ private fun HrVsScoreChart(points: List<Triple<Float, Float, Int>>) {
         shape = RoundedCornerShape(10.dp)) {
         Column(Modifier.padding(14.dp)) {
             Text("Heart Rate vs Avg/Arrow", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                color = ATextPrimary)
-            Text("Each dot = 1 round (darker = earlier)", fontSize = 11.sp, color = ATextMuted)
+                color = AppHeaderDark)
+            Text("Each dot = 1 round (darker = earlier)", fontSize = 11.sp, color = AppTextMuted)
             Spacer(Modifier.height(6.dp))
             Canvas(Modifier.fillMaxWidth().height(140.dp)) {
                 val w = size.width; val h = size.height
@@ -506,11 +537,11 @@ private fun HrVsScoreChart(points: List<Triple<Float, Float, Int>>) {
                 fun scoreToY(v: Float) = padTop + chartH * (1f - (v - scoreMin) / scoreRange)
                 for (i in 0..4) {
                     val v = scoreMin + scoreRange * i / 4f
-                    drawLine(ABorderLight, Offset(padLeft, scoreToY(v)), Offset(padLeft + chartW, scoreToY(v)), 0.5f)
+                    drawLine(AppBorderLight, Offset(padLeft, scoreToY(v)), Offset(padLeft + chartW, scoreToY(v)), 0.5f)
                 }
                 for (i in 0..4) {
                     val v = hrMin + hrRange * i / 4f
-                    drawLine(ABorderLight, Offset(hrToX(v), padTop), Offset(hrToX(v), padTop + chartH), 0.5f)
+                    drawLine(AppBorderLight, Offset(hrToX(v), padTop), Offset(hrToX(v), padTop + chartH), 0.5f)
                 }
                 points.forEach { (hr, score, round) ->
                     val alpha = 1f - (round - 1).toFloat() / totalRounds.coerceAtLeast(2) * 0.75f
@@ -543,8 +574,12 @@ private fun RoundAnalyticsCard(
     round: RoundSummary,
     ra: RoundAnalytics,
     dismissedShotIndices: Set<Int>,
+    manualShotTimes: List<Float>,
+    profile: DetectionProfile,
     onDismissShot: (Int) -> Unit,
     onRestoreShot: (Int) -> Unit,
+    onFlagMissedAt: (Float) -> Unit,
+    onUnflagManual: (Float) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val activeShotCount = ra.detectedShots.indices.count { it !in dismissedShotIndices }
@@ -570,9 +605,9 @@ private fun RoundAnalyticsCard(
                 verticalAlignment = Alignment.CenterVertically) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (expanded) "▼" else "▶", fontSize = 12.sp, color = ATextMuted)
+                    Text(if (expanded) "▼" else "▶", fontSize = 12.sp, color = AppTextMuted)
                     Text("Round ${round.number}", fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold, color = ATextPrimary)
+                        fontWeight = FontWeight.SemiBold, color = AppHeaderDark)
                     // Total score badge (blue = score)
                     Box(Modifier.background(AScoreBlue100, RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp)) {
@@ -590,7 +625,9 @@ private fun RoundAnalyticsCard(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    if (activeShotCount > 0) Text("$activeShotCount shots", fontSize = 11.sp, color = ATextMuted)
+                    if (activeShotCount > 0) Text("$activeShotCount shots", fontSize = 11.sp, color = AppTextMuted)
+                    // near-miss count badge disabled for now
+                    // if (ra.nearMisses.isNotEmpty()) Text("${ra.nearMisses.size} near-miss", ...)
                     if (ra.avgHr > 0f) Text("%.0f bpm".format(ra.avgHr), fontSize = 11.sp, color = AHrRed)
                     if (avgHoldSec != null) Text("%.1fs hold".format(avgHoldSec), fontSize = 11.sp, color = AHoldGold)
                 }
@@ -602,7 +639,7 @@ private fun RoundAnalyticsCard(
 
                     // HR chart WITH shot markers
                     if (ra.hrSamples.size >= 2) {
-                        Text("Heart Rate", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ATextSecondary)
+                        Text("Heart Rate", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = AppTextSecondary)
                         Spacer(Modifier.height(4.dp))
                         HrChart(
                             hrSamples = ra.hrSamples,
@@ -622,14 +659,16 @@ private fun RoundAnalyticsCard(
                     }
                     if (nonWalkingData.size >= 2) {
                         Text("Gravity Z (arm position)", fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium, color = ATextSecondary)
+                            fontWeight = FontWeight.Medium, color = AppTextSecondary)
                         Spacer(Modifier.height(4.dp))
                         GravityZChart(
                             sensorData = nonWalkingData,
                             durationSec = roundDurationSec,
                             detectedShots = activeShots,
+                            manualShotTimes = manualShotTimes,
                             modifier = Modifier.fillMaxWidth().height(110.dp),
                             startSec = ra.startSec,
+                            onFlagMissedAt = onFlagMissedAt,
                         )
                         Spacer(Modifier.height(10.dp))
                     }
@@ -637,15 +676,18 @@ private fun RoundAnalyticsCard(
                     // Shot hold chips
                     if (ra.detectedShots.isNotEmpty()) {
                         Text("Detected Shots", fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                            color = ATextSecondary)
+                            color = AppTextSecondary)
                         Spacer(Modifier.height(6.dp))
                         ShotHoldChips(
                             shots = ra.detectedShots,
+                            profile = profile,
                             dismissedIndices = dismissedShotIndices,
                             onDismiss = onDismissShot,
                             onRestore = onRestoreShot,
+                            onUnflagManual = onUnflagManual,
                         )
                     }
+
                 }
             }
         }
@@ -676,7 +718,7 @@ private fun HrChart(
 
         for (i in 0..3) {
             val v = minHr + hrRange * i / 3f
-            drawLine(ABorderLight, Offset(padL, hrToY(v)), Offset(padL + chartW, hrToY(v)), 0.5f)
+            drawLine(AppBorderLight, Offset(padL, hrToY(v)), Offset(padL + chartW, hrToY(v)), 0.5f)
         }
 
         val path = Path()
@@ -690,7 +732,7 @@ private fun HrChart(
         // Shot markers (amber vertical lines) - drawn on top of HR line
         detectedShots.forEach { shot ->
             val x = tToX(shot.time)
-            drawLine(AAmber600.copy(alpha = 0.8f), Offset(x, padT), Offset(x, padT + chartH), 1.5f)
+            drawLine(AppAmber600.copy(alpha = 0.8f), Offset(x, padT), Offset(x, padT + chartH), 1.5f)
         }
 
         val paint = android.graphics.Paint().apply {
@@ -708,8 +750,10 @@ private fun GravityZChart(
     sensorData: List<SensorSample>,
     durationSec: Float,
     detectedShots: List<DetectedShot>,
+    manualShotTimes: List<Float> = emptyList(),
     modifier: Modifier = Modifier,
     startSec: Float = 0f,
+    onFlagMissedAt: ((timeSec: Float) -> Unit)? = null,
 ) {
     if (sensorData.isEmpty()) return
     val gzMin = (sensorData.minOf { it.gz } - 0.5f).coerceAtLeast(-10f)
@@ -717,49 +761,155 @@ private fun GravityZChart(
     val gzRange = (gzMax - gzMin).coerceAtLeast(1f)
     val timeRange = durationSec.coerceAtLeast(1f)
 
-    Canvas(modifier) {
-        val w = size.width; val h = size.height
-        val padL = 34f; val padT = 6f; val padB = 18f; val padR = 8f
-        val chartW = w - padL - padR; val chartH = h - padT - padB
+    // Crosshair state: fraction 0..1 along the time axis; null = nothing pinned
+    var pinnedFrac by remember { mutableStateOf<Float?>(null) }
+    val padL = 34f; val padR = 8f; val padT = 6f; val padB = 18f
 
-        fun tToX(t: Float) = padL + ((t - startSec) / timeRange) * chartW
-        fun gzToY(v: Float) = padT + chartH * (1f - (v - gzMin) / gzRange)
+    Column {
+        Canvas(
+            modifier.then(
+                if (onFlagMissedAt != null) Modifier.pointerInput(sensorData) {
+                    detectTapGestures { tap ->
+                        val chartW = size.width - padL - padR
+                        val frac = ((tap.x - padL) / chartW).coerceIn(0f, 1f)
+                        // Second tap near same spot → clear pin
+                        pinnedFrac = if (pinnedFrac != null &&
+                            kotlin.math.abs(frac - pinnedFrac!!) < 0.04f) null else frac
+                    }
+                } else Modifier
+            )
+        ) {
+            val w = size.width; val h = size.height
+            val chartW = w - padL - padR; val chartH = h - padT - padB
 
-        // Shoot zone band (gz 5–7.5, purple tint)
-        val shootTop = gzToY(7.5f)
-        val shootBot = gzToY(5.0f)
-        if (shootBot > shootTop) {
-            drawRect(AGzColor.copy(alpha = 0.08f), Offset(padL, shootTop),
-                androidx.compose.ui.geometry.Size(chartW, shootBot - shootTop))
+            fun tToX(t: Float) = padL + ((t - startSec) / timeRange) * chartW
+            fun gzToY(v: Float) = padT + chartH * (1f - (v - gzMin) / gzRange)
+
+            // Shoot zone band (gz 5–7.5, purple tint)
+            val shootTop = gzToY(7.5f)
+            val shootBot = gzToY(5.0f)
+            if (shootBot > shootTop)
+                drawRect(AGzColor.copy(alpha = 0.08f), Offset(padL, shootTop),
+                    Size(chartW, shootBot - shootTop))
+
+            // Grid lines
+            for (i in 0..3) {
+                val v = gzMin + gzRange * i / 3f
+                drawLine(AppBorderLight, Offset(padL, gzToY(v)), Offset(padL + chartW, gzToY(v)), 0.5f)
+            }
+
+            // GZ line
+            val path = Path()
+            sensorData.forEachIndexed { i, s ->
+                val x = tToX(s.time); val y = gzToY(s.gz.coerceIn(gzMin, gzMax))
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, AGzColor, style = Stroke(width = 1.5f))
+
+            // Detected shot markers (amber)
+            detectedShots.forEach { shot ->
+                val x = tToX(shot.time)
+                drawLine(AppAmber600.copy(alpha = 0.8f), Offset(x, padT), Offset(x, padT + chartH), 1.5f)
+            }
+
+            // Manual shot markers (cyan dashed)
+            manualShotTimes.forEach { t ->
+                val x = tToX(t)
+                for (seg in 0..4) {
+                    val y0 = padT + chartH * seg / 5f
+                    val y1 = padT + chartH * (seg + 0.6f) / 5f
+                    drawLine(AppCyan600.copy(alpha = 0.7f), Offset(x, y0), Offset(x, y1), 1.5f)
+                }
+            }
+
+            // Pinned crosshair
+            pinnedFrac?.let { frac ->
+                val xPin = padL + frac * chartW
+                val timeSec = startSec + frac * timeRange
+                val nearest = sensorData.minByOrNull { kotlin.math.abs(it.time - timeSec) }
+                val gz = nearest?.gz ?: 0f
+                val yPin = gzToY(gz.coerceIn(gzMin, gzMax))
+
+                drawLine(AppCyan600, Offset(xPin, padT), Offset(xPin, padT + chartH), 1.5f)
+                drawCircle(AppCyan600, 4.5f, Offset(xPin, yPin))
+                drawCircle(ABgWhite, 2.5f, Offset(xPin, yPin))
+
+                val pinPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.rgb(0x08, 0x91, 0xB2)
+                    textSize = 17f; isAntiAlias = true
+                    textAlign = if (frac > 0.6f)
+                        android.graphics.Paint.Align.RIGHT
+                    else android.graphics.Paint.Align.LEFT
+                }
+                val labelX = if (frac > 0.6f) xPin - 5f else xPin + 5f
+                drawContext.canvas.nativeCanvas.drawText(
+                    "gz %.1f  t %.1fs".format(gz, timeSec - startSec),
+                    labelX, padT + 14f, pinPaint,
+                )
+            }
+
+            // Y labels
+            val paint = android.graphics.Paint().apply {
+                color = android.graphics.Color.rgb(0x94, 0xA3, 0xB8); textSize = 16f; isAntiAlias = true
+            }
+            for (i in 0..3) {
+                val v = gzMin + gzRange * i / 3f
+                drawContext.canvas.nativeCanvas.drawText("%.0f".format(v), 0f, gzToY(v) + 5f, paint)
+            }
         }
 
-        // Grid lines
-        for (i in 0..3) {
-            val v = gzMin + gzRange * i / 3f
-            drawLine(ABorderLight, Offset(padL, gzToY(v)), Offset(padL + chartW, gzToY(v)), 0.5f)
-        }
+        // Action row — only visible when crosshair is pinned
+        if (onFlagMissedAt != null && pinnedFrac != null) {
+            val frac    = pinnedFrac!!
+            val timeSec = startSec + frac * timeRange
+            val nudge   = 0.25f / timeRange   // 0.25 s per tap
+            Spacer(Modifier.height(4.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // ◀ nudge left
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(AppSlate100)
+                        .clickable { pinnedFrac = (frac - nudge).coerceIn(0f, 1f) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) { Text("◀", fontSize = 13.sp, color = AppTextSecondary) }
 
-        // GZ line
-        val path = Path()
-        sensorData.forEachIndexed { i, s ->
-            val x = tToX(s.time); val y = gzToY(s.gz.coerceIn(gzMin, gzMax))
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        drawPath(path, AGzColor, style = Stroke(width = 1.5f))
+                // Time + gz readout
+                Text(
+                    "t %.1fs".format(timeSec - startSec),
+                    fontSize = 11.sp, color = AppCyan600,
+                    modifier = Modifier.weight(1f),
+                )
 
-        // Shot markers (amber vertical lines) on top
-        detectedShots.forEach { shot ->
-            val x = tToX(shot.time)
-            drawLine(AAmber600.copy(alpha = 0.8f), Offset(x, padT), Offset(x, padT + chartH), 1.5f)
-        }
+                // ▶ nudge right
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(AppSlate100)
+                        .clickable { pinnedFrac = (frac + nudge).coerceIn(0f, 1f) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) { Text("▶", fontSize = 13.sp, color = AppTextSecondary) }
 
-        // Y labels
-        val paint = android.graphics.Paint().apply {
-            color = android.graphics.Color.rgb(0x94, 0xA3, 0xB8); textSize = 16f; isAntiAlias = true
-        }
-        for (i in 0..3) {
-            val v = gzMin + gzRange * i / 3f
-            drawContext.canvas.nativeCanvas.drawText("%.0f".format(v), 0f, gzToY(v) + 5f, paint)
+                Spacer(Modifier.width(4.dp))
+
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(AppCyan600.copy(alpha = 0.1f))
+                        .border(1.dp, AppCyan600.copy(alpha = 0.35f), RoundedCornerShape(4.dp))
+                        .clickable { onFlagMissedAt(timeSec); pinnedFrac = null }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text("⚑ Flag", fontSize = 11.sp, color = AppCyan600,
+                        fontWeight = FontWeight.Medium)
+                }
+                Text("✕", fontSize = 13.sp, color = AppTextMuted,
+                    modifier = Modifier.clickable { pinnedFrac = null }.padding(4.dp))
+            }
         }
     }
 }
@@ -767,43 +917,58 @@ private fun GravityZChart(
 @Composable
 private fun ShotHoldChips(
     shots: List<DetectedShot>,
+    profile: DetectionProfile,
     dismissedIndices: Set<Int>,
     onDismiss: (Int) -> Unit,
     onRestore: (Int) -> Unit,
+    onUnflagManual: (Float) -> Unit = {},
 ) {
-    var selectedIdx by remember { mutableIntStateOf(-1) }
+    var selectedShotIdx by remember { mutableIntStateOf(-1) }
 
     // ── Chip row ──
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         shots.forEachIndexed { idx, shot ->
             val dismissed  = idx in dismissedIndices
-            val isSelected = !dismissed && selectedIdx == idx
+            val isManual   = shot.isManual
+            val isSelected = !dismissed && selectedShotIdx == idx
             val bgColor = when {
-                dismissed  -> ABorderLight
+                dismissed  -> AppBorderLight
                 isSelected -> AHoldGold.copy(alpha = 0.15f)
                 else       -> AHoldGold100
             }
-            val textColor = if (dismissed) ATextMuted else AHoldGold800
+            val textColor = when {
+                dismissed -> AppTextMuted
+                else      -> AHoldGold800
+            }
             Box(
                 Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(bgColor)
-                    .then(if (isSelected) Modifier.border(1.dp, AHoldGold.copy(alpha = 0.5f), RoundedCornerShape(6.dp)) else Modifier)
+                    .then(
+                        if (isSelected) Modifier.border(1.dp, AHoldGold.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                        else Modifier
+                    )
                     .clickable {
-                        if (dismissed) onRestore(idx)
-                        else selectedIdx = if (selectedIdx == idx) -1 else idx
+                        when {
+                            dismissed -> onRestore(idx)
+                            else      -> selectedShotIdx = if (selectedShotIdx == idx) -1 else idx
+                        }
                     }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("%.1fs".format(shot.holdSec), fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold, color = textColor)
-                    if (dismissed) {
-                        Text("↩ restore", fontSize = 10.sp, color = ATextMuted)
-                    } else {
-                        Text("Shot ${idx + 1}", fontSize = 10.sp, color = AHoldGold)
-                        if (shot.gzStdev > 0f) {
-                            Text("±%.2f".format(shot.gzStdev), fontSize = 9.sp, color = AGzColor)
+                    Text(
+                        "%.1fs".format(shot.holdSec),
+                        fontSize = 13.sp, fontWeight = FontWeight.Bold, color = textColor,
+                    )
+                    when {
+                        dismissed -> Text("↩ restore", fontSize = 10.sp, color = AppTextMuted)
+                        else -> {
+                            // ⚑ marker for manual shots; regular shot number otherwise
+                            Text(
+                                if (isManual) "Shot ${idx + 1} ⚑" else "Shot ${idx + 1}",
+                                fontSize = 10.sp, color = AHoldGold,
+                            )
                         }
                     }
                 }
@@ -811,22 +976,26 @@ private fun ShotHoldChips(
         }
     }
 
-    // ── Detail panel for selected shot ──
-    val selShot = shots.getOrNull(selectedIdx)
-    if (selShot != null && selectedIdx !in dismissedIndices) {
+    // ── Detail panel for selected shot (manual or auto-detected) ──
+    val selShot = shots.getOrNull(selectedShotIdx)
+    if (selShot != null && selectedShotIdx !in dismissedIndices) {
         Spacer(Modifier.height(8.dp))
         ShotDetailPanel(
             shot      = selShot,
-            shotIndex = selectedIdx,
-            onDismiss = { onDismiss(selectedIdx); selectedIdx = -1 },
-            onClose   = { selectedIdx = -1 },
+            shotIndex = selectedShotIdx,
+            profile   = profile,
+            onDismiss = { onDismiss(selectedShotIdx); selectedShotIdx = -1 },
+            onClose   = { selectedShotIdx = -1 },
+            onUnflag  = if (selShot.isManual) {
+                { onUnflagManual(selShot.time); selectedShotIdx = -1 }
+            } else null,
         )
     }
 
     Spacer(Modifier.height(4.dp))
     Text(
-        "Tap chip to inspect · dismissed shots excluded from stats",
-        fontSize = 10.sp, color = ATextMuted,
+        "Tap chip to inspect · dismissed shots excluded from stats · ⚑ = manually added",
+        fontSize = 10.sp, color = AppTextMuted,
     )
 }
 
@@ -836,8 +1005,11 @@ private fun ShotHoldChips(
 private fun ShotDetailPanel(
     shot: DetectedShot,
     shotIndex: Int,
+    profile: DetectionProfile,
     onDismiss: () -> Unit,
     onClose: () -> Unit,
+    /** Non-null only for manually added shots — removes the shot from the dataset entirely. */
+    onUnflag: (() -> Unit)? = null,
 ) {
     Column(
         Modifier
@@ -849,9 +1021,11 @@ private fun ShotDetailPanel(
     ) {
         // Header
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-            Text("Shot ${shotIndex + 1} detail", fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold, color = AHoldGold800)
-            Text("✕", fontSize = 14.sp, color = ATextMuted,
+            Text(
+                if (shot.isManual) "Shot ${shotIndex + 1} ⚑ (manual)" else "Shot ${shotIndex + 1} detail",
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AHoldGold800,
+            )
+            Text("✕", fontSize = 14.sp, color = AppTextMuted,
                 modifier = Modifier.clickable { onClose() }.padding(4.dp))
         }
         Spacer(Modifier.height(8.dp))
@@ -859,12 +1033,72 @@ private fun ShotDetailPanel(
         // Stat pills
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ShotStatPill(Modifier.weight(1f), "Hold", "%.1fs".format(shot.holdSec), AHoldGold800, AHoldGold100)
-            ShotStatPill(Modifier.weight(1f), "Stability",
-                if (shot.gzStdev > 0f) "±%.2f gz".format(shot.gzStdev) else "—",
-                AGzColor, AGzColor.copy(alpha = 0.08f))
-            if (shot.hrAtShot != null) {
-                ShotStatPill(Modifier.weight(1f), "HR at shot",
-                    "%.0f bpm".format(shot.hrAtShot), AHrPink, AHrPink.copy(alpha = 0.08f))
+            ShotStatPill(Modifier.weight(1f), "HR",
+                if (shot.hrAtShot != null) "%.0f bpm".format(shot.hrAtShot) else "—",
+                AppHrPink, AppHrPink.copy(alpha = 0.08f))
+        }
+
+        // Threshold check — shows actual vs required for each criterion
+        Spacer(Modifier.height(10.dp))
+        Text("Threshold check", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = AppTextSecondary)
+        Spacer(Modifier.height(4.dp))
+        val gzDMean = shot.gzDWindow.takeIf { it.isNotEmpty() }?.average()?.toFloat()
+        // gz_ddt: show % of samples in band rather than min/max — the window may span merge gaps
+        // (brief out-of-band dips between two qualifying segments that were merged together).
+        // A detected shot always passed the band filter on the qualifying segments by definition.
+        val gzDdtInBandPct = shot.gzDdtWindow.takeIf { it.isNotEmpty() }?.let { w ->
+            w.count { it >= profile.gzDdtMin && it <= profile.gzDdtMax } * 100 / w.size
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            ThresholdRow("Hold",
+                "%.1fs".format(shot.holdSec),
+                "min %.1fs".format(profile.holdMinSec),
+                shot.holdSec >= profile.holdMinSec,
+                "%.1fs margin".format(shot.holdSec - profile.holdMinSec))
+            if (gzDMean != null)
+                ThresholdRow("gz_d (mean)",
+                    "%.2f".format(gzDMean),
+                    "min %.2f".format(profile.gzMinDetrended),
+                    gzDMean >= profile.gzMinDetrended,
+                    "%.2f margin".format(gzDMean - profile.gzMinDetrended))
+            if (gzDdtInBandPct != null)
+                // Always ✓ for detected shots — qualifying segments were in-band by definition.
+                // % < 100 means the window spans a merge gap (brief out-of-band dip between segments).
+                ThresholdRow("gz_ddt",
+                    "$gzDdtInBandPct% in band",
+                    "band [%.1f, %.1f]".format(profile.gzDdtMin, profile.gzDdtMax),
+                    true,
+                    if (gzDdtInBandPct < 100) "merged gap" else null)
+            // Angle thresholds (only when configured)
+            if (profile.yawMin != null || profile.yawMax != null) {
+                val yawVals = shot.sensorWindow.map { it.yaw }
+                val yawMin = yawVals.minOrNull(); val yawMax = yawVals.maxOrNull()
+                if (yawMin != null)
+                    ThresholdRow("yaw range",
+                        "[%.1f, %.1f]".format(yawMin, yawMax!!),
+                        "bounds [${profile.yawMin?.let { "%.1f".format(it) } ?: "–"}, ${profile.yawMax?.let { "%.1f".format(it) } ?: "–"}]",
+                        (profile.yawMin == null || yawMin >= profile.yawMin) && (profile.yawMax == null || yawMax!! <= profile.yawMax),
+                        null)
+            }
+            if (profile.pitchMin != null || profile.pitchMax != null) {
+                val pVals = shot.sensorWindow.map { it.pitch }
+                val pMin = pVals.minOrNull(); val pMax = pVals.maxOrNull()
+                if (pMin != null)
+                    ThresholdRow("pitch range",
+                        "[%.1f, %.1f]".format(pMin, pMax!!),
+                        "bounds [${profile.pitchMin?.let { "%.1f".format(it) } ?: "–"}, ${profile.pitchMax?.let { "%.1f".format(it) } ?: "–"}]",
+                        (profile.pitchMin == null || pMin >= profile.pitchMin) && (profile.pitchMax == null || pMax!! <= profile.pitchMax),
+                        null)
+            }
+            if (profile.rollMin != null || profile.rollMax != null) {
+                val rVals = shot.sensorWindow.map { it.roll }
+                val rMin = rVals.minOrNull(); val rMax = rVals.maxOrNull()
+                if (rMin != null)
+                    ThresholdRow("roll range",
+                        "[%.1f, %.1f]".format(rMin, rMax!!),
+                        "bounds [${profile.rollMin?.let { "%.1f".format(it) } ?: "–"}, ${profile.rollMax?.let { "%.1f".format(it) } ?: "–"}]",
+                        (profile.rollMin == null || rMin >= profile.rollMin) && (profile.rollMax == null || rMax!! <= profile.rollMax),
+                        null)
             }
         }
 
@@ -872,7 +1106,7 @@ private fun ShotDetailPanel(
         if (shot.sensorWindow.size >= 2) {
             Spacer(Modifier.height(10.dp))
             Text("Gravity Z during hold", fontSize = 11.sp,
-                fontWeight = FontWeight.Medium, color = ATextSecondary)
+                fontWeight = FontWeight.Medium, color = AppTextSecondary)
             Spacer(Modifier.height(4.dp))
             ShotGzMiniChart(
                 sensorWindow = shot.sensorWindow,
@@ -882,15 +1116,52 @@ private fun ShotDetailPanel(
         }
 
         Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), Arrangement.End) {
+        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp, Alignment.End)) {
+            if (onUnflag != null) {
+                // Manual shot: offer full removal in addition to the standard dismiss
+                Text(
+                    "Remove manual",
+                    fontSize = 11.sp, color = AppTextSecondary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { onUnflag() }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
             Text(
-                "Dismiss (false positive)",
+                if (onUnflag != null) "Dismiss (exclude from stats)" else "Dismiss (false positive)",
                 fontSize = 11.sp, color = ARed500,
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .clickable { onDismiss() }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             )
+        }
+    }
+}
+
+// ── Threshold check row ────────────────────────────────────────────────────
+
+@Composable
+private fun ThresholdRow(label: String, actual: String, required: String, passed: Boolean, margin: String?) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (passed) Color(0xFFECFDF5) else Color(0xFFFFF1F2))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(if (passed) "✓" else "✗", fontSize = 11.sp,
+            color = if (passed) Color(0xFF16A34A) else ARed500)
+        Text(label, fontSize = 11.sp, color = AppTextSecondary, modifier = Modifier.width(70.dp))
+        Text(actual, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            color = if (passed) Color(0xFF15803D) else ARed500, modifier = Modifier.weight(1f))
+        Text(required, fontSize = 10.sp, color = AppTextMuted)
+        if (margin != null) {
+            // Prefix "+" only for numeric margins (e.g. "1.2s margin"); not for labels like "merged gap"
+            val display = if (margin.first().isDigit()) "+$margin" else margin
+            Text(display, fontSize = 10.sp, color = Color(0xFF16A34A))
         }
     }
 }
@@ -908,7 +1179,7 @@ private fun ShotStatPill(
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, fontSize = 9.sp, color = ATextMuted, textAlign = TextAlign.Center)
+            Text(label, fontSize = 9.sp, color = AppTextMuted, textAlign = TextAlign.Center)
             Spacer(Modifier.height(2.dp))
             Text(value, fontSize = 13.sp, fontWeight = FontWeight.Bold,
                 color = textColor, textAlign = TextAlign.Center)
@@ -949,7 +1220,7 @@ private fun ShotGzMiniChart(
         // Grid lines
         for (i in 0..3) {
             val v = gzMin + gzRange * i / 3f
-            drawLine(ABorderLight, Offset(padL, gzToY(v)), Offset(padL + chartW, gzToY(v)), 0.5f)
+            drawLine(AppBorderLight, Offset(padL, gzToY(v)), Offset(padL + chartW, gzToY(v)), 0.5f)
         }
 
         // GZ line
@@ -986,3 +1257,7 @@ private fun ShotGzMiniChart(
         )
     }
 }
+
+// ═══════════════ DISMISSAL TUNE CARD ═══════════════
+
+

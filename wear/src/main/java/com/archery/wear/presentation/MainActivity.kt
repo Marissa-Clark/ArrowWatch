@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.archery.shared.ScoreZone
 import com.archery.shared.WatchPhase
 import com.archery.wear.SessionViewModel
 import com.archery.wear.data.SessionLogger
@@ -50,6 +51,7 @@ class MainActivity : ComponentActivity() {
         sensorMgr.onSensorUpdate = { yaw, pitch, roll, gz, steps, gx, gy ->
             sessionLogger.logSensor(System.currentTimeMillis(), yaw, pitch, roll, gz, steps, gx, gy)
         }
+        sensorMgr.onStepDetected = { viewModel.onStepDetected() }
 
         // Ask for permissions; don't gate the UI on the result.
         permLauncher.launch(
@@ -64,8 +66,6 @@ class MainActivity : ComponentActivity() {
             val phase by viewModel.phase.collectAsState()
             val session by viewModel.session.collectAsState()
             val arrowsPerRound by viewModel.arrowsPerRound.collectAsState()
-            val showQuickScore by viewModel.showQuickScore.collectAsState()
-            val previousRoundInfo by viewModel.previousRoundInfo.collectAsState()
             val heartRate by sensorMgr.heartRate.collectAsState()
 
             // Manage sensor lifecycle and screen-on flag with session phase
@@ -95,7 +95,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val walkingSteps by viewModel.walkingSteps.collectAsState()
+            val roundStartMs by viewModel.roundStartMs.collectAsState()
             val isApprox = session?.isScoreApprox ?: false
+
+            // All shot zones from completed ends — drives the arc ring
+            val sessionShotZones: List<ScoreZone?> = session?.rounds
+                ?.dropLast(1)   // exclude the current in-progress end
+                ?.flatMap { round -> round.shots.map { it.finalZone ?: it.quickZone } }
+                ?: emptyList()
+
+            // Per-arrow average for the most recently completed end
+            val lastEndAvg: Float? = session?.rounds?.let { rounds ->
+                if (rounds.size < 2) null
+                else {
+                    val prev = rounds[rounds.size - 2]
+                    val nonDns = prev.shots.filter { it.finalZone != ScoreZone.DNS }
+                    if (nonDns.isEmpty()) null
+                    else prev.approxScore / nonDns.size
+                }
+            }
 
             ArcheryTheme {
                 when (phase) {
@@ -107,16 +126,15 @@ class MainActivity : ComponentActivity() {
                     WatchPhase.SHOOTING -> ShootingScreen(
                         shotCount = session?.currentRound?.shots?.size ?: 0,
                         arrowsPerRound = arrowsPerRound,
-                        roundNumber = session?.currentRound?.number ?: 1,
+                        endNumber = session?.currentRound?.number ?: 1,
                         heartRate = heartRate,
-                        previousRoundInfo = previousRoundInfo,
+                        lastEndAvg = lastEndAvg,
                         totalScore = session?.totalScore ?: 0f,
                         avgPerArrow = session?.avgPerArrow ?: 0f,
+                        walkingSteps = walkingSteps,
                         isApprox = isApprox,
-                        showQuickScore = showQuickScore,
-                        onQuickScore = viewModel::quickScore,
-                        onDismissQuickScore = viewModel::dismissQuickScore,
-                        onManualShot = viewModel::manualShot,
+                        roundStartMs = roundStartMs,
+                        sessionShotZones = sessionShotZones,
                         onEnterScoring = viewModel::enterScoring,
                         onEndSession = viewModel::endSession,
                     )
@@ -128,6 +146,7 @@ class MainActivity : ComponentActivity() {
                         onSetTotal = viewModel::setRoundTotal,
                         onFinish = viewModel::finishScoring,
                         onSkip = viewModel::skipScoring,
+                        onCancelScoring = viewModel::cancelScoring,
                     )
                     WatchPhase.SUMMARY -> SummaryScreen(
                         session = session,
