@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -43,29 +44,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.archery.shared.LiveSession
+import com.archery.shared.ScoreZone
 import com.archery.shared.SessionSummary
+import com.archery.ui.theme.*
 import java.time.format.DateTimeFormatter
+import kotlin.math.ceil
+import kotlin.math.sqrt
 import kotlinx.coroutines.delay
 
-private val BgPage        = Color(0xFFF8FAFC)
 private val BgWhite       = Color.White
-private val HeaderDarker  = Color(0xFF0F172A)
 private val LiveGreen     = Color(0xFF16A34A)
 private val Amber700      = Color(0xFFB45309)
 private val Red600        = Color(0xFFDC2626)
-private val Cyan600       = Color(0xFF0891B2)
-private val Cyan800       = Color(0xFF155E75)
 private val Amber400      = Color(0xFFFBBF24)
-private val TextPrimary   = Color(0xFF1E293B)
-private val TextSecondary = Color(0xFF475569)
-private val TextMuted     = Color(0xFF94A3B8)
-private val TextSlate300  = Color(0xFFCBD5E1)
-private val BorderLight   = Color(0xFFE2E8F0)
 
 @Composable
 fun SessionListScreen(
     onSessionClick: (Long) -> Unit,
     onLiveSessionClick: () -> Unit,
+    onManageProfiles: () -> Unit,
+    onLogPastSession: () -> Unit,
     vm: SessionListViewModel = viewModel(),
 ) {
     val allSessions by vm.sessions.collectAsState()
@@ -80,16 +78,16 @@ fun SessionListScreen(
     val scoredSessions = activeSessions.filter { it.avgPerArrow > 0 }
 
     if (allSessions.isEmpty() && !hasLive) {
-        Box(Modifier.fillMaxSize().background(BgPage), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().background(AppBgPage), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("No sessions yet", fontSize = 18.sp, color = TextSecondary)
+                Text("No sessions yet", fontSize = 18.sp, color = AppTextSecondary)
                 Spacer(Modifier.height(8.dp))
                 Text("Sessions will appear here after you shoot on your watch",
-                    fontSize = 14.sp, color = TextMuted)
+                    fontSize = 14.sp, color = AppTextMuted)
                 Spacer(Modifier.height(24.dp))
                 Box(
                     Modifier.clip(RoundedCornerShape(12.dp))
-                        .background(Brush.horizontalGradient(listOf(Cyan600, Cyan800)))
+                        .background(Brush.horizontalGradient(listOf(AppCyan600, AppCyan800)))
                         .clickable { vm.startSession() }
                         .padding(horizontal = 32.dp, vertical = 14.dp),
                     contentAlignment = Alignment.Center,
@@ -103,7 +101,7 @@ fun SessionListScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(BgPage).padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxSize().background(AppBgPage).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item { Spacer(Modifier.height(52.dp)) }
@@ -132,14 +130,14 @@ fun SessionListScreen(
                     Box(
                         Modifier.weight(1f)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(TextMuted.copy(alpha = 0.08f))
-                            .border(1.dp, TextMuted.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            .background(AppTextMuted.copy(alpha = 0.08f))
+                            .border(1.dp, AppTextMuted.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
                             .clickable { vm.dismissLiveSession() }
                             .padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text("Dismiss (phone)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                            color = TextMuted)
+                            color = AppTextMuted)
                     }
                 }
             }
@@ -147,22 +145,61 @@ fun SessionListScreen(
 
         if (!hasLive) {
             item {
-                Box(
-                    Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Brush.horizontalGradient(listOf(Cyan600, Cyan800)))
-                        .clickable { vm.startSession() }
-                        .padding(vertical = 14.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Start Session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color.White)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        Modifier.weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Brush.horizontalGradient(listOf(AppCyan600, AppCyan800)))
+                            .clickable { vm.startSession() }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Start Session", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                            color = Color.White)
+                    }
+                    Box(
+                        Modifier.weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AppTextMuted.copy(alpha = 0.1f))
+                            .border(1.dp, AppBorderLight, RoundedCornerShape(12.dp))
+                            .clickable { onLogPastSession() }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Log Past Session", fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                            color = AppTextSecondary)
+                    }
                 }
             }
         }
 
-        if (scoredSessions.size >= 2) {
-            item { ScoreTrendChart(scoredSessions.reversed()) }
+
+
+        val dateFmt = DateTimeFormatter.ofPattern("M/d")
+
+        // One entry per session, oldest first
+        val scoreEntries = scoredSessions.reversed().mapIndexed { i, s ->
+            val vals = s.rounds.mapNotNull { r ->
+                val n = r.arrows.count { it.zone != ScoreZone.DNS }
+                if (n > 0) (r.displayScore / n).toDouble() else null
+            }
+            val mean = if (vals.isNotEmpty()) vals.average().toFloat() else s.avgPerArrow
+            BarEntry(mean, stdevOf(vals), s.date.format(dateFmt), i.toLong())
+        }
+        if (scoreEntries.size >= 2) {
+            item { TrendLineChart("Avg Score / Arrow", scoreEntries, AppCyan600) { "%.1f".format(it) } }
+        }
+
+        val holdSessions = activeSessions.filter { (it.avgHoldMs ?: 0L) > 0L }
+        val holdEntries = holdSessions.reversed().mapIndexed { i, s ->
+            val vals = s.rounds.mapNotNull { r ->
+                (r.avgHoldMs ?: 0L).takeIf { it > 0L }?.let { it / 1000.0 }
+            }
+            val mean = if (vals.isNotEmpty()) vals.average().toFloat() else (s.avgHoldMs ?: 0L) / 1000f
+            BarEntry(mean, stdevOf(vals), s.date.format(dateFmt), i.toLong())
+        }
+        if (holdEntries.size >= 2) {
+            item { TrendLineChart("Avg Hold / Arrow (s)", holdEntries, Amber700) { "%.1f".format(it) } }
         }
 
         items(displaySessions, key = { it.id }) { s ->
@@ -178,11 +215,26 @@ fun SessionListScreen(
                 Text(
                     if (showArchived) "Hide archived (${archivedSessions.size})"
                     else "Show archived (${archivedSessions.size})",
-                    fontSize = 13.sp, color = Cyan600,
+                    fontSize = 13.sp, color = AppCyan600,
                     modifier = Modifier.fillMaxWidth()
                         .clickable { showArchived = !showArchived }
                         .padding(vertical = 12.dp),
                 )
+            }
+        }
+
+        item {
+            Box(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(AppTextMuted.copy(alpha = 0.07f))
+                    .border(1.dp, AppBorderLight, RoundedCornerShape(10.dp))
+                    .clickable(onClick = onManageProfiles)
+                    .padding(vertical = 13.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Detection Settings", fontSize = 14.sp, color = AppTextSecondary,
+                    fontWeight = FontWeight.Medium)
             }
         }
 
@@ -210,7 +262,7 @@ private fun LiveSessionCard(session: LiveSession, onClick: () -> Unit) {
 
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = HeaderDarker),
+        colors = CardDefaults.cardColors(containerColor = AppHeaderDarker),
         shape = RoundedCornerShape(14.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -232,7 +284,7 @@ private fun LiveSessionCard(session: LiveSession, onClick: () -> Unit) {
             }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                Text("Shots", fontSize = 11.sp, color = TextSlate300)
+                Text("Shots", fontSize = 11.sp, color = AppTextSlate300)
                 Text("$shots/$arrowsPerRound", fontSize = 11.sp,
                     fontWeight = FontWeight.Medium, color = Color.White)
             }
@@ -265,11 +317,11 @@ private fun LiveSessionCard(session: LiveSession, onClick: () -> Unit) {
 private fun LiveTile(mod: Modifier, label: String, value: String, valueColor: Color, unit: String = "") {
     Box(mod.background(Color.White.copy(0.07f), RoundedCornerShape(10.dp)).padding(10.dp)) {
         Column {
-            Text(label, fontSize = 10.sp, color = TextSlate300, fontWeight = FontWeight.Medium)
+            Text(label, fontSize = 10.sp, color = AppTextSlate300, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(value, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = valueColor)
-                if (unit.isNotEmpty()) Text(unit, fontSize = 10.sp, color = TextSlate300,
+                if (unit.isNotEmpty()) Text(unit, fontSize = 10.sp, color = AppTextSlate300,
                     modifier = Modifier.padding(bottom = 3.dp))
             }
         }
@@ -278,10 +330,9 @@ private fun LiveTile(mod: Modifier, label: String, value: String, valueColor: Co
 
 @Composable
 private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: () -> Unit) {
-    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy  h:mm a")
+    val dateFmt = DateTimeFormatter.ofPattern("EEE, MMM d")
+    val timeFmt = DateTimeFormatter.ofPattern("h:mm a")
     val avg = session.avgPerArrow
-    val durationMin = (session.durationSec / 60).toInt()
-    val name = session.displayName ?: "Practice Session"
     var confirmDelete by remember { mutableStateOf(false) }
 
     Card(
@@ -289,54 +340,56 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
         colors = CardDefaults.cardColors(containerColor = BgWhite),
         shape = RoundedCornerShape(12.dp),
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Text(name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
-                    modifier = Modifier.weight(1f))
-                if (!confirmDelete) {
-                    if (avg > 0) {
-                        val pfx = if (session.rounds.all { it.confirmedScore != null }) "" else "~"
-                        Text("$pfx%.1f / arrow".format(avg), fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold, color = Amber700,
-                            modifier = Modifier.padding(end = 8.dp))
+                // ── Left: date + time + optional name ────────────────────────
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        session.date.format(dateFmt),
+                        fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppHeaderDark,
+                    )
+                    Text(
+                        session.date.format(timeFmt),
+                        fontSize = 12.sp, color = AppTextSecondary,
+                    )
+                    session.displayName?.let { name ->
+                        Text(name, fontSize = 11.sp, color = AppTextMuted)
                     }
-                    // Small delete icon
-                    Text("✕", fontSize = 13.sp, color = TextMuted,
-                        modifier = Modifier
-                            .clickable { confirmDelete = true }
-                            .padding(4.dp))
                 }
-            }
-            Spacer(Modifier.height(3.dp))
-            Text(session.date.format(formatter), fontSize = 12.sp, color = TextSecondary)
-            Spacer(Modifier.height(3.dp))
-            if (confirmDelete) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Delete this session?", fontSize = 12.sp, color = Red600,
-                        modifier = Modifier.weight(1f))
-                    Text("Yes", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Red600.copy(alpha = 0.1f))
-                            .clickable { onDelete() }
-                            .padding(horizontal = 10.dp, vertical = 4.dp))
-                    Text("No", fontSize = 12.sp, color = TextMuted,
-                        modifier = Modifier
-                            .clickable { confirmDelete = false }
-                            .padding(horizontal = 6.dp, vertical = 4.dp))
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (session.isArchived) Text("Archived", fontSize = 12.sp, color = TextMuted)
-                    Text("${session.rounds.size} rounds", fontSize = 12.sp, color = TextSecondary)
-                    Text("${session.totalArrows} arrows", fontSize = 12.sp, color = TextSecondary)
-                    if (durationMin > 0) Text("${durationMin}min", fontSize = 12.sp, color = TextSecondary)
-                    val holdSec = (session.avgHoldMs ?: 0L).takeIf { it > 0L }?.let { it / 1000f }
-                    if (holdSec != null) Text("%.1fs hold".format(holdSec), fontSize = 12.sp, color = Amber700)
+
+                if (confirmDelete) {
+                    // ── Delete confirm ────────────────────────────────────────
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Delete?", fontSize = 12.sp, color = Red600)
+                        Text("Yes", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Red600.copy(alpha = 0.1f))
+                                .clickable { onDelete() }
+                                .padding(horizontal = 10.dp, vertical = 4.dp))
+                        Text("No", fontSize = 12.sp, color = AppTextMuted,
+                            modifier = Modifier
+                                .clickable { confirmDelete = false }
+                                .padding(horizontal = 6.dp, vertical = 4.dp))
+                    }
+                } else {
+                    // ── Right: three stat columns + delete ────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SessionStat(label = "ENDS",   value = "${session.rounds.size}")
+                        SessionStatDivider()
+                        SessionStat(label = "ARROWS", value = "${session.totalArrows}")
+                        SessionStatDivider()
+                        SessionStat(
+                            label = "AVG",
+                            value = if (avg > 0) "%.1f".format(avg) else "—",
+                            color = if (avg > 0) Amber700 else AppTextMuted,
+                        )
+                        Text("  ✕", fontSize = 13.sp, color = AppTextMuted,
+                            modifier = Modifier.clickable { confirmDelete = true }.padding(start = 8.dp, top = 4.dp, bottom = 4.dp))
+                    }
                 }
             }
         }
@@ -344,52 +397,132 @@ private fun SessionCard(session: SessionSummary, onClick: () -> Unit, onDelete: 
 }
 
 @Composable
-private fun ScoreTrendChart(sessions: List<SessionSummary>) {
-    val scores = sessions.map { it.avgPerArrow }
-    val maxS = scores.max(); val minS = scores.min()
-    val range = (maxS - minS).coerceAtLeast(1f)
+private fun SessionStat(
+    label: String,
+    value: String,
+    color: Color = AppHeaderDark,
+) {
+    Column(Modifier.padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, fontSize = 10.sp, color = AppTextMuted,
+            fontWeight = FontWeight.Medium, letterSpacing = 1.sp)
+        Spacer(Modifier.height(2.dp))
+        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = color)
+    }
+}
+
+@Composable
+private fun SessionStatDivider() {
+    Box(
+        Modifier
+            .padding(horizontal = 4.dp)
+            .size(width = 1.dp, height = 32.dp)
+            .background(AppBorderLight)
+    )
+}
+
+// ── Shared trend-chart helpers ────────────────────────────────────────────────
+
+private data class BarEntry(val mean: Float, val stdev: Float, val xLabel: String, val dayOffset: Long = 0L)
+
+private fun stdevOf(vals: List<Double>): Float {
+    if (vals.size < 2) return 0f
+    val m = vals.average()
+    return sqrt(vals.sumOf { (it - m) * (it - m) } / vals.size).toFloat()
+}
+
+/** Rounds v up to the nearest multiple of [step]. */
+private fun ceilTo(v: Float, step: Float) = ceil(v / step) * step
+
+@Composable
+private fun TrendLineChart(
+    title: String,
+    entries: List<BarEntry>,
+    lineColor: Color,
+    yFmt: (Float) -> String,
+) {
+    if (entries.isEmpty()) return
+    val dataTop = entries.maxOf { (it.mean + it.stdev).coerceAtLeast(it.mean) }
+    val step = when {
+        dataTop > 20 -> 5f
+        dataTop > 10 -> 2f
+        dataTop > 5  -> 1f
+        dataTop > 2  -> 0.5f
+        else         -> 0.2f
+    }
+    val yMax = ceilTo(dataTop * 1.05f, step).coerceAtLeast(step)
+    val n = entries.size
 
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = BgWhite),
         shape = RoundedCornerShape(10.dp)) {
         Column(Modifier.padding(14.dp)) {
-            Text("Avg Score / Arrow", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                color = TextPrimary)
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppHeaderDark)
             Spacer(Modifier.height(8.dp))
-            Canvas(Modifier.fillMaxWidth().height(110.dp)) {
-                val w = size.width; val h = size.height
-                val pt = 8f; val pb = 24f; val ch = h - pt - pb
-                for (i in 0..3) {
-                    val y = pt + ch * (1 - i / 3f)
-                    drawLine(BorderLight, Offset(0f, y), Offset(w, y), 1f)
+            Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+                val padL = 46f; val padR = 8f; val padT = 10f; val padB = 28f
+                val cw = size.width - padL - padR
+                val ch = size.height - padT - padB
+
+                fun yScr(v: Float) = padT + ch * (1f - (v / yMax).coerceIn(0f, 1f))
+                // Time-based x: position proportional to actual days since first entry
+                val maxOffset = entries.maxOf { it.dayOffset }.coerceAtLeast(1L)
+                fun xPos(i: Int) = when {
+                    n <= 1     -> padL + cw / 2f
+                    maxOffset == 1L -> padL + cw * i / (n - 1f)   // all same day → spread evenly
+                    else       -> padL + cw * entries[i].dayOffset / maxOffset.toFloat()
                 }
-                val pts = scores.mapIndexed { i, s ->
-                    Offset(
-                        if (scores.size > 1) w * i / (scores.size - 1f) else w / 2f,
-                        pt + ch * (1 - (s - minS) / range),
-                    )
+
+                // Y grid + labels
+                val yPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.rgb(0x94, 0xA3, 0xB8)
+                    textSize = 20f; isAntiAlias = true
+                    textAlign = android.graphics.Paint.Align.RIGHT
                 }
-                val area = Path().apply {
-                    moveTo(pts.first().x, pt + ch)
-                    pts.forEach { lineTo(it.x, it.y) }
-                    lineTo(pts.last().x, pt + ch); close()
+                for (k in 0..4) {
+                    val v = yMax * k / 4f
+                    val y = yScr(v)
+                    drawLine(AppBorderLight, Offset(padL, y), Offset(padL + cw, y), 1f)
+                    drawContext.canvas.nativeCanvas.drawText(yFmt(v), padL - 5f, y + 6f, yPaint)
                 }
-                drawPath(area, Cyan600.copy(0.15f))
-                val line = Path().apply {
-                    moveTo(pts.first().x, pts.first().y)
-                    for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
+
+                // ±1σ shaded band (closed polygon: upper edge L→R, lower edge R→L)
+                if (n >= 2) {
+                    val band = Path().apply {
+                        entries.forEachIndexed { i, e ->
+                            val y = yScr((e.mean + e.stdev).coerceAtMost(yMax))
+                            if (i == 0) moveTo(xPos(i), y) else lineTo(xPos(i), y)
+                        }
+                        entries.indices.reversed().forEach { i ->
+                            lineTo(xPos(i), yScr((entries[i].mean - entries[i].stdev).coerceAtLeast(0f)))
+                        }
+                        close()
+                    }
+                    drawPath(band, lineColor.copy(alpha = 0.15f))
                 }
-                drawPath(line, Cyan600, style = Stroke(2.5f))
-                pts.forEach { drawCircle(Cyan600, 4f, it); drawCircle(BgWhite, 2f, it) }
-                val paint = android.graphics.Paint().apply {
-                    color = android.graphics.Color.rgb(0x47, 0x55, 0x69)
-                    textSize = 22f; isAntiAlias = true
+
+                // Mean line
+                val linePath = Path().apply {
+                    entries.forEachIndexed { i, e ->
+                        val y = yScr(e.mean)
+                        if (i == 0) moveTo(xPos(i), y) else lineTo(xPos(i), y)
+                    }
+                }
+                drawPath(linePath, lineColor, style = Stroke(2.5f))
+
+                // Dots + x labels
+                val xPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.rgb(0x94, 0xA3, 0xB8)
+                    textSize = 20f; isAntiAlias = true
                     textAlign = android.graphics.Paint.Align.CENTER
                 }
-                scores.forEachIndexed { i, s ->
-                    drawContext.canvas.nativeCanvas.drawText("%.1f".format(s),
-                        pts[i].x, pt + ch + pb - 4f, paint)
+                entries.forEachIndexed { i, e ->
+                    val xc = xPos(i); val yc = yScr(e.mean)
+                    drawCircle(lineColor, 4.5f, Offset(xc, yc))
+                    drawCircle(Color.White, 2.5f, Offset(xc, yc))
+                    if (n <= 8 || i % 2 == 0)
+                        drawContext.canvas.nativeCanvas.drawText(e.xLabel, xc, size.height - 4f, xPaint)
                 }
             }
         }
     }
 }
+

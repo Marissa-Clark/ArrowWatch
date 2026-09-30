@@ -110,6 +110,12 @@ class SessionRepository(db: ArcheryDatabase) {
     suspend fun renameSession(sessionId: Long, name: String?) =
         dao.renameSession(sessionId, name)
 
+    suspend fun updateSessionDate(sessionId: Long, dateMs: Long) =
+        dao.updateSessionDate(sessionId, dateMs)
+
+    suspend fun updateDistanceTarget(sessionId: Long, distanceM: Int?, targetSizeCm: Int?) =
+        dao.updateDistanceTarget(sessionId, distanceM, targetSizeCm)
+
     suspend fun deleteSession(sessionId: Long) =
         dao.deleteSession(sessionId)
 
@@ -137,6 +143,12 @@ class SessionRepository(db: ArcheryDatabase) {
     suspend fun deleteRound(sessionId: Long, roundNumber: Int) =
         dao.deleteRound(sessionId, roundNumber)
 
+    suspend fun lockAnalytics(sessionId: Long, locked: Boolean) =
+        dao.setAnalyticsLocked(sessionId, locked)
+
+    suspend fun updateRoundHoldMs(sessionId: Long, roundNumber: Int, holdMs: Long) =
+        dao.updateRoundHoldMs(sessionId, roundNumber, holdMs)
+
     suspend fun insertRoundAfter(sessionId: Long, afterRound: Int) {
         dao.shiftRoundNumbersPhase1(sessionId, afterRound)
         dao.shiftRoundNumbersPhase2(sessionId)
@@ -147,6 +159,60 @@ class SessionRepository(db: ArcheryDatabase) {
                 detectedScore = 0f,
             )
         )
+    }
+
+    /**
+     * Creates a manual (retrospective) session with per-arrow scores.
+     * [arrowData][roundIdx][arrowIdx] = (ScoreZone, score) or null for unset arrows.
+     * Round totals are computed from the entered arrow scores.
+     * Returns the new session ID.
+     */
+    suspend fun createManualSession(
+        dateMs: Long,
+        displayName: String?,
+        arrowsPerRound: Int,
+        arrowData: List<List<Pair<ScoreZone, Float>?>>,
+        distanceM: Int? = null,
+        targetSizeCm: Int? = null,
+    ): Long {
+        val sessionId = dao.insertSession(
+            SessionEntity(
+                fileName      = "manual_$dateMs",
+                filePath      = "",
+                dateMs        = dateMs,
+                durationSec   = 0L,
+                displayName   = displayName?.takeIf { it.isNotBlank() },
+                distanceM     = distanceM,
+                targetSizeCm  = targetSizeCm,
+            )
+        )
+        arrowData.forEachIndexed { idx, arrows ->
+            val roundNum = idx + 1
+            val entered  = arrows.filterNotNull()
+            val total    = entered.sumOf { it.second.toDouble() }.toFloat().takeIf { entered.isNotEmpty() }
+            val roundId  = dao.insertRound(
+                RoundEntity(
+                    sessionId      = sessionId,
+                    roundNumber    = roundNum,
+                    detectedScore  = total ?: 0f,
+                    confirmedScore = total,
+                )
+            )
+            val arrowEntities = arrows.mapIndexedNotNull { aIdx, entry ->
+                entry?.let { (zone, score) ->
+                    ArrowEntity(
+                        roundId    = roundId,
+                        sessionId  = sessionId,
+                        shotNumber = aIdx + 1,
+                        zone       = zone.name,
+                        score      = score,
+                        isFinal    = true,
+                    )
+                }
+            }
+            if (arrowEntities.isNotEmpty()) dao.insertArrows(arrowEntities)
+        }
+        return sessionId
     }
 
     // ── Mapping ──────────────────────────────────────────────────────────────
@@ -173,6 +239,9 @@ class SessionRepository(db: ArcheryDatabase) {
             avgHoldMs = allHold.takeIf { it.isNotEmpty() }?.average()?.toLong(),
             isArchived = session.isArchived,
             displayName = session.displayName,
+            analyticsLocked = session.analyticsLocked,
+            distanceM = session.distanceM,
+            targetSizeCm = session.targetSizeCm,
         )
     }
 

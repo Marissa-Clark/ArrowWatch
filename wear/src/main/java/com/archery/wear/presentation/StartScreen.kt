@@ -22,11 +22,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
+import androidx.wear.tooling.preview.devices.WearDevices
 import com.archery.wear.presentation.theme.WatchAmber
 import com.archery.wear.presentation.theme.WatchBg
 import com.archery.wear.presentation.theme.WatchBtnConfirm
@@ -62,17 +64,7 @@ fun StartScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = "Practice",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = WatchCyan,
-                letterSpacing = 1.sp,
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = "Arrows / Round",
+                text = "Arrows / End",
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Medium,
                 color = WatchTextSecondary,
@@ -120,5 +112,13 @@ fun StartScreen(
                 Text("Start", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = WatchTextPrimary)
             }
         }
+    }
+}
+
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, name = "Start screen")
+@Composable
+private fun StartScreenPreview() {
+    com.archery.wear.presentation.theme.ArcheryTheme {
+        StartScreen(arrowsPerRound = 3, onArrowsChanged = {}, onStart = {})
     }
 }

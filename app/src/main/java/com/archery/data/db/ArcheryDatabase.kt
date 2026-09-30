@@ -12,7 +12,7 @@ import com.archery.data.db.entity.SessionEntity
 
 @Database(
     entities = [SessionEntity::class, RoundEntity::class, ArrowEntity::class],
-    version = 3,
+    version = 5,
     exportSchema = false,
 )
 abstract class ArcheryDatabase : RoomDatabase() {
@@ -34,13 +34,26 @@ abstract class ArcheryDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN analyticsLocked INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN distanceM INTEGER")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN targetSizeCm INTEGER")
+            }
+        }
+
         fun getInstance(context: Context): ArcheryDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     ArcheryDatabase::class.java,
                     "archery.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { INSTANCE = it }
             }
     }
 }

@@ -3,7 +3,6 @@ package com.archery.ui.live
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -50,8 +47,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.archery.analytics.DetectedShot
+import com.archery.shared.LiveArrow
 import com.archery.shared.LiveRound
 import com.archery.shared.ScoreZone
 import com.archery.shared.WatchPhase
@@ -124,7 +122,6 @@ fun LiveScoringScreen(
     vm: LiveScoringViewModel = viewModel(),
 ) {
     val session by vm.session.collectAsState()
-    val roundAnalytics by vm.roundAnalytics.collectAsState()
 
     LaunchedEffect(session?.isEnded) {
         if (session?.isEnded == true) onBack()
@@ -198,27 +195,10 @@ fun LiveScoringScreen(
 
                 Spacer(Modifier.height(8.dp))
 
-                Row(
-                    Modifier.fillMaxWidth(),
-                    Arrangement.SpaceBetween,
-                    Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Live Scoring — Round $currentRoundNum",
-                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                    )
-                    val hr = currentRound?.latestHeartRate ?: 0f
-                    if (hr > 0f) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text("%.0f".format(hr), fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold, color = WatchRed)
-                            Text("bpm", fontSize = 10.sp, color = WatchRed.copy(alpha = 0.7f))
-                        }
-                    }
-                }
+                Text(
+                    "Live Scoring — End $currentRoundNum",
+                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                )
             }
         }
 
@@ -227,10 +207,8 @@ fun LiveScoringScreen(
             when (phase) {
                 WatchPhase.SHOOTING -> {
                     ShootingPhaseView(
-                        round = currentRound,
                         arrowsPerRound = s.arrowsPerRound,
                         completedRounds = completedRounds,
-                        roundAnalytics = roundAnalytics,
                         onEnterScoring = vm::enterScoring,
                         onEditArrow = { roundNum, shotIndex, zone, score ->
                             vm.scoreArrow(roundNum, shotIndex, zone.name, score)
@@ -240,6 +218,7 @@ fun LiveScoringScreen(
                 WatchPhase.SCORING -> {
                     ScoringPhaseView(
                         round = currentRound,
+                        roundNumber = currentRoundNum,
                         arrowsPerRound = s.arrowsPerRound,
                         selectedArrow = selectedArrow,
                         onSelectArrow = { selectedArrow = it },
@@ -285,81 +264,87 @@ fun LiveScoringScreen(
 
 @Composable
 private fun ShootingPhaseView(
-    round: LiveRound?,
     arrowsPerRound: Int,
     completedRounds: List<LiveRound>,
-    roundAnalytics: Map<Int, List<DetectedShot>>,
     onEnterScoring: () -> Unit,
     onEditArrow: (roundNum: Int, shotIndex: Int, zone: ScoreZone, score: Int?) -> Unit,
 ) {
+    // ── Session total + avg card ──────────────────────────────────────────────
+    val sessionTotal = completedRounds.sumOf { (it.confirmedScore ?: it.detectedScore ?: 0f).toDouble() }.toFloat()
+    val totalArrowsScored = completedRounds.sumOf { r -> r.arrows.count { it.isScored && it.zone != ScoreZone.DNS } }
+    val avgPerArrow = if (totalArrowsScored > 0) sessionTotal / totalArrowsScored else null
+
     Card(
         Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = BgWhite),
+        colors = CardDefaults.cardColors(containerColor = HeaderDark),
         shape = RoundedCornerShape(12.dp),
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                "Waiting for arrows...", fontSize = 16.sp, fontWeight = FontWeight.Medium,
-                color = TextPrimary,
-            )
-            Spacer(Modifier.height(8.dp))
-            val shotCount = round?.arrows?.size ?: 0
-            Text("$shotCount / $arrowsPerRound arrows detected", fontSize = 14.sp, color = TextSecondary)
-
-            if (round != null && round.arrows.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    round.arrows.forEach { arrow ->
-                        val qz = arrow.quickZone
-                        val zoneColor = ZONE_COLORS[qz]
-                        Box(
-                            Modifier.size(28.dp).clip(CircleShape).background(zoneColor ?: BorderLight),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                qz?.label?.take(1) ?: "?",
-                                fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                                color = if (qz == ScoreZone.WHITE || qz == ScoreZone.MISS)
-                                    TextPrimary else Color.White,
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = onEnterScoring,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Cyan600),
-                shape = RoundedCornerShape(10.dp),
-            ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Total
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    "Enter Scoring", fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold, color = Color.White,
+                    if (sessionTotal > 0f) "%.0f".format(sessionTotal) else "—",
+                    fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                )
+                Text(
+                    "TOTAL", fontSize = 11.sp, fontWeight = FontWeight.Normal,
+                    letterSpacing = 2.sp, color = TextMuted,
+                )
+            }
+            // Divider
+            Box(Modifier.width(1.dp).height(48.dp).background(Color(0xFF334155)))
+            // Avg per arrow
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    if (avgPerArrow != null) "%.1f".format(avgPerArrow) else "—",
+                    fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Amber600,
+                )
+                Text(
+                    "AVG / ARROW", fontSize = 11.sp, fontWeight = FontWeight.Normal,
+                    letterSpacing = 2.sp, color = TextMuted,
                 )
             }
         }
     }
 
+    // ── Zone distribution (right below stats so they read as a unit) ─────────
+    if (completedRounds.isNotEmpty()) {
+        val zoneCounts = completedRounds
+            .flatMap { it.arrows }
+            .mapNotNull { it.zone }
+            .filter { it != ScoreZone.DNS }
+            .groupingBy { it }
+            .eachCount()
+        Spacer(Modifier.height(8.dp))
+        LiveZoneDistribution(zoneCounts)
+    }
+
+    Spacer(Modifier.height(12.dp))
+
+    // ── Enter Scoring button ──────────────────────────────────────────────────
+    Button(
+        onClick = onEnterScoring,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(containerColor = Cyan600),
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Text(
+            "Enter Scoring", fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold, color = Color.White,
+        )
+    }
+
     if (completedRounds.isNotEmpty()) {
         Spacer(Modifier.height(20.dp))
         Text(
-            "Round Details", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
+            "End Details", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
         )
         Spacer(Modifier.height(8.dp))
         LiveRoundDetailsTable(completedRounds, arrowsPerRound, onEditArrow = onEditArrow)
-
-        // ── Per-round hold-time chips ─────────────────────────────────────────
-        val analyticsRounds = completedRounds.filter { roundAnalytics[it.number]?.isNotEmpty() == true }
-        if (analyticsRounds.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            analyticsRounds.forEach { round ->
-                val shots = roundAnalytics[round.number].orEmpty()
-                Spacer(Modifier.height(4.dp))
-                DetectedShotChips(roundNumber = round.number, shots = shots)
-            }
-        }
     }
 }
 
@@ -368,6 +353,7 @@ private fun ShootingPhaseView(
 @Composable
 private fun ScoringPhaseView(
     round: LiveRound?,
+    roundNumber: Int,
     arrowsPerRound: Int,
     selectedArrow: Int,
     onSelectArrow: (Int) -> Unit,
@@ -377,67 +363,113 @@ private fun ScoringPhaseView(
     val arrows = round?.arrows ?: emptyList()
     val numArrows = arrows.size.coerceAtLeast(arrowsPerRound)
 
-    Text("Arrows", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-    Spacer(Modifier.height(8.dp))
+    // ── Running end summary ───────────────────────────────────────────────────
+    val scoredArrows = arrows.filter { it.isScored && it.zone != ScoreZone.DNS }
+    val runningTotal = scoredArrows.sumOf {
+        it.score?.toDouble() ?: it.zone?.defaultScore?.toDouble() ?: 0.0
+    }.toFloat()
+    val scoredCount = arrows.count { it.isScored }
 
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth(),
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = BgWhite),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        for (i in 0 until numArrows) {
-            val arrow = arrows.getOrNull(i)
-            val zone = arrow?.zone
-            val isDns = zone == ScoreZone.DNS
-            val zoneColor = ZONE_COLORS[zone]
-            val isSelected = i == selectedArrow
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            Arrangement.SpaceBetween,
+            Alignment.CenterVertically,
+        ) {
+            Column {
+                Text(
+                    "End $roundNumber",
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = TextSecondary, letterSpacing = 0.5.sp,
+                )
+                Text(
+                    "$scoredCount / $numArrows scored",
+                    fontSize = 11.sp, color = TextMuted,
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    if (runningTotal > 0f) "%.0f".format(runningTotal) else "—",
+                    fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                    color = if (runningTotal > 0f) Cyan800 else TextMuted,
+                )
+                Text(
+                    "total",
+                    fontSize = 10.sp, color = TextMuted,
+                )
+            }
+        }
 
-            Box(
+        // Arrow selectors inside the card
+        if (numArrows > 0) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(zoneColor ?: BorderLight)
-                    .then(if (isSelected) Modifier.border(3.dp, Cyan600, CircleShape) else Modifier)
-                    .clickable { onSelectArrow(i) }
-                    .then(
-                        if (isDns) Modifier.drawBehind {
-                            drawCircle(
-                                WatchRed, radius = size.minDimension / 2 - 4f,
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f),
-                            )
-                            drawLine(
-                                WatchRed,
-                                Offset(size.width * 0.2f, size.height * 0.8f),
-                                Offset(size.width * 0.8f, size.height * 0.2f),
-                                strokeWidth = 3f,
-                            )
-                        } else Modifier
-                    ),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 14.dp),
             ) {
-                if (zone != null && !isDns) {
-                    val scoreText = arrow?.score?.toInt()?.let {
-                        if (it == 10) "10" else "$it"
-                    } ?: zone.label.take(1)
-                    Text(
-                        scoreText,
-                        fontSize = if (scoreText.length > 1) 11.sp else 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (zone == ScoreZone.WHITE || zone == ScoreZone.MISS)
-                            TextPrimary else Color.White,
-                    )
-                } else if (zone == null) {
-                    Text(
-                        "${i + 1}", fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                        color = TextSecondary,
-                    )
+                for (i in 0 until numArrows) {
+                    val arrow = arrows.getOrNull(i)
+                    val zone = arrow?.zone
+                    val isDns = zone == ScoreZone.DNS
+                    val zoneColor = ZONE_COLORS[zone]
+                    val isSelected = i == selectedArrow
+
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(zoneColor ?: BorderLight)
+                            .then(if (isSelected) Modifier.border(3.dp, Cyan600, CircleShape) else Modifier)
+                            .clickable { onSelectArrow(i) }
+                            .then(
+                                if (isDns) Modifier.drawBehind {
+                                    drawCircle(
+                                        WatchRed, radius = size.minDimension / 2 - 4f,
+                                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f),
+                                    )
+                                    drawLine(
+                                        WatchRed,
+                                        Offset(size.width * 0.2f, size.height * 0.8f),
+                                        Offset(size.width * 0.8f, size.height * 0.2f),
+                                        strokeWidth = 3f,
+                                    )
+                                } else Modifier
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (zone != null && !isDns) {
+                            val scoreText = arrow?.score?.toInt()?.let {
+                                if (it == 10) "10" else "$it"
+                            } ?: zone.label.take(1)
+                            Text(
+                                scoreText,
+                                fontSize = if (scoreText.length > 1) 11.sp else 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (zone == ScoreZone.WHITE || zone == ScoreZone.MISS)
+                                    TextPrimary else Color.White,
+                            )
+                        } else if (zone == null) {
+                            Text(
+                                "${i + 1}", fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                color = TextSecondary,
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(12.dp))
     Text(
-        "Score Arrow ${selectedArrow + 1}", fontSize = 14.sp,
+        "Arrow ${selectedArrow + 1}", fontSize = 14.sp,
         fontWeight = FontWeight.SemiBold, color = TextPrimary,
     )
     Spacer(Modifier.height(8.dp))
@@ -491,8 +523,6 @@ private fun ScoringPhaseView(
     }
 
     Spacer(Modifier.height(8.dp))
-
-    Spacer(Modifier.height(4.dp))
     Button(
         onClick = onDone,
         modifier = Modifier.fillMaxWidth(),
@@ -512,66 +542,6 @@ private fun ScoreButton(option: ScoreOption, modifier: Modifier = Modifier, onCl
         contentAlignment = Alignment.Center,
     ) {
         Text(option.label, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = option.textColor)
-    }
-}
-
-// ── Total entry ───────────────────────────────────────────────────────────────
-
-@Composable
-private fun TotalEntryView(
-    enteredTotal: Int,
-    onTotalChanged: (Int) -> Unit,
-    onConfirm: () -> Unit,
-    onSkip: () -> Unit,
-    onBackToArrows: () -> Unit,
-) {
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = BgWhite),
-        shape = RoundedCornerShape(12.dp),
-    ) {
-        Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                "← Round Total",
-                fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Cyan600,
-                modifier = Modifier.clickable { onBackToArrows() }.padding(vertical = 4.dp),
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Box(
-                    Modifier.size(48.dp).clip(CircleShape).background(BorderLight)
-                        .clickable { onTotalChanged((enteredTotal - 1).coerceAtLeast(0)) },
-                    contentAlignment = Alignment.Center,
-                ) { Text("−", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
-                Text("$enteredTotal", fontSize = 48.sp, fontWeight = FontWeight.Bold, color = Amber600)
-                Box(
-                    Modifier.size(48.dp).clip(CircleShape).background(BorderLight)
-                        .clickable { onTotalChanged((enteredTotal + 1).coerceAtMost(300)) },
-                    contentAlignment = Alignment.Center,
-                ) { Text("+", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onSkip, modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF94A3B8)),
-                    shape = RoundedCornerShape(10.dp),
-                ) { Text("Skip", fontSize = 14.sp, color = Color.White) }
-                Button(
-                    onClick = onConfirm, modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Cyan600),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Text(
-                        "✓ Confirm", fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold, color = Color.White,
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -640,9 +610,9 @@ private fun CompletedRoundRow(round: LiveRound) {
                     }
                 }
             }
-            val prefix = if (confirmed) "" else "~"
+            @Suppress("UNUSED_VARIABLE") val isApprox = !confirmed
             Text(
-                if (total != null && total > 0) "$prefix%.0f".format(total) else "—",
+                if (total != null && total > 0) "%.0f".format(total) else "—",
                 fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                 color = if (confirmed) Cyan800 else Amber600,
             )
@@ -652,7 +622,6 @@ private fun CompletedRoundRow(round: LiveRound) {
 
 // ── Round details table ───────────────────────────────────────────────────────
 
-// Pair<roundNumber, shotIndex> of the arrow being edited; null = no dialog
 private typealias EditTarget = Pair<Int, Int>
 
 @Composable
@@ -670,12 +639,13 @@ private fun LiveRoundDetailsTable(
         shape = RoundedCornerShape(10.dp),
     ) {
         Column {
+            // Header row
             Row(
                 Modifier.fillMaxWidth().background(BgSlate100)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Rnd", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                Text("End", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                     color = TextSecondary, modifier = Modifier.width(36.dp))
                 for (a in 1..maxArrows) {
                     Text("A$a", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
@@ -688,9 +658,6 @@ private fun LiveRoundDetailsTable(
                 Text("Avg", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                     color = TextSecondary, textAlign = TextAlign.Center,
                     modifier = Modifier.width(40.dp))
-                Text("HR", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                    color = TextSecondary, textAlign = TextAlign.Center,
-                    modifier = Modifier.width(36.dp))
             }
 
             rounds.forEach { round ->
@@ -754,18 +721,10 @@ private fun LiveRoundDetailsTable(
                             )
                         }
                     }
-                    Box(Modifier.width(36.dp), contentAlignment = Alignment.Center) {
-                        val hr = round.latestHeartRate ?: 0f
-                        Text(
-                            if (hr > 0) "%.0f".format(hr) else "—",
-                            fontSize = 11.sp,
-                            color = if (hr > 0) WatchRed else TextMuted,
-                            fontWeight = if (hr > 0) FontWeight.Medium else FontWeight.Normal,
-                        )
-                    }
                 }
             }
 
+            // Totals row
             val totalScore = rounds.sumOf {
                 ((it.confirmedScore ?: it.detectedScore ?: 0f).toDouble())
             }
@@ -792,19 +751,11 @@ private fun LiveRoundDetailsTable(
                         fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Amber800,
                     )
                 }
-                val hrValues = rounds.mapNotNull { it.latestHeartRate }.filter { it > 0f }
-                val avgHr = if (hrValues.isNotEmpty()) hrValues.average() else 0.0
-                Box(Modifier.width(36.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        if (avgHr > 0) "%.0f".format(avgHr) else "—",
-                        fontSize = 12.sp, fontWeight = FontWeight.Bold, color = WatchRed,
-                    )
-                }
             }
         }
     }
 
-    // ── Arrow edit dialog ────────────────────────────────────────────────────
+    // ── Arrow edit dialog ─────────────────────────────────────────────────────
     val target = editTarget
     if (target != null) {
         AlertDialog(
@@ -831,7 +782,6 @@ private fun LiveRoundDetailsTable(
                             }
                         }
                     }
-                    // Miss + DNS row
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val missOpt = SCORE_OPTIONS[10]
                         Box(
@@ -867,43 +817,6 @@ private fun LiveRoundDetailsTable(
     }
 }
 
-// ── Detected-shot hold-time chips ─────────────────────────────────────────────
-
-@Composable
-private fun DetectedShotChips(roundNumber: Int, shots: List<DetectedShot>) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "R$roundNumber:",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = TextSecondary,
-            modifier = Modifier.width(30.dp),
-        )
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            shots.forEach { shot ->
-                val label = buildString {
-                    append("%.1fs".format(shot.holdSec))
-                    shot.hrAtShot?.let { append("  ${it.toInt()}bpm") }
-                }
-                AssistChip(
-                    onClick = {},
-                    label = { Text(label, fontSize = 11.sp) },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = Amber100,
-                        labelColor = Amber800,
-                    ),
-                )
-            }
-        }
-    }
-}
-
 // ── Zone distribution ─────────────────────────────────────────────────────────
 
 @Composable
@@ -917,44 +830,141 @@ private fun LiveZoneDistribution(zoneCounts: Map<ScoreZone, Int>) {
         colors = CardDefaults.cardColors(containerColor = BgWhite),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(
-                Modifier.fillMaxWidth().height(20.dp)
-                    .clip(RoundedCornerShape(4.dp)).background(BgSlate100)
-            ) {
-                ordered.forEach { zone ->
-                    val frac = (zoneCounts[zone] ?: 0).toFloat() / total
-                    Box(
-                        Modifier.weight(frac).height(20.dp)
-                            .background(ZONE_COLORS[zone] ?: TextMuted)
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier.fillMaxWidth().height(16.dp)
+                .clip(RoundedCornerShape(10.dp)).background(BgSlate100)
+        ) {
             ordered.forEach { zone ->
-                val count = zoneCounts[zone] ?: 0
-                val pct = count * 100f / total
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                    Arrangement.SpaceBetween, Alignment.CenterVertically,
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            Modifier.size(8.dp).background(
-                                ZONE_COLORS[zone] ?: TextMuted, RoundedCornerShape(2.dp)
-                            )
-                        )
-                        Text(
-                            zone.label.lowercase().replaceFirstChar { it.uppercase() },
-                            fontSize = 12.sp, color = TextPrimary,
-                        )
-                    }
-                    Text("$count (%.0f%%)".format(pct), fontSize = 12.sp, color = TextSecondary)
-                }
+                val frac = (zoneCounts[zone] ?: 0).toFloat() / total
+                Box(
+                    Modifier.weight(frac).height(16.dp)
+                        .background(ZONE_COLORS[zone] ?: TextMuted)
+                )
             }
         }
+    }
+}
+
+// ── Previews ─────────────────────────────────────────────────────────────────
+
+private val previewArrows3 = listOf(
+    LiveArrow(shotIndex = 1, quickZone = ScoreZone.GOLD),
+    LiveArrow(shotIndex = 2, quickZone = ScoreZone.RED),
+    LiveArrow(shotIndex = 3, quickZone = ScoreZone.BLUE),
+)
+
+private val previewCompletedRounds = listOf(
+    LiveRound(
+        number = 1, isComplete = true,
+        confirmedScore = 26f,
+        arrows = listOf(
+            LiveArrow(1, zone = ScoreZone.GOLD, score = 10f),
+            LiveArrow(2, zone = ScoreZone.GOLD, score = 9f),
+            LiveArrow(3, zone = ScoreZone.RED,  score = 7f),
+        ),
+    ),
+    LiveRound(
+        number = 2, isComplete = true,
+        confirmedScore = 21f,
+        arrows = listOf(
+            LiveArrow(1, zone = ScoreZone.BLUE,  score = 6f),
+            LiveArrow(2, zone = ScoreZone.RED,   score = 8f),
+            LiveArrow(3, zone = ScoreZone.BLACK, score = 4f),
+        ),
+    ),
+    LiveRound(
+        number = 3, isComplete = true,
+        confirmedScore = 28f,
+        arrows = listOf(
+            LiveArrow(1, zone = ScoreZone.GOLD, score = 10f),
+            LiveArrow(2, zone = ScoreZone.GOLD, score = 10f),
+            LiveArrow(3, zone = ScoreZone.RED,  score = 8f),
+        ),
+    ),
+)
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Shooting – no arrows yet")
+@Composable
+private fun PreviewShootingEmpty() {
+    ShootingPhaseView(
+        arrowsPerRound = 3,
+        completedRounds = emptyList(),
+        onEnterScoring = {},
+        onEditArrow = { _, _, _, _ -> },
+    )
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Shooting – arrows detected + history")
+@Composable
+private fun PreviewShootingWithHistory() {
+    Column(Modifier.background(BgPage).padding(20.dp)) {
+        ShootingPhaseView(
+            arrowsPerRound = 3,
+            completedRounds = previewCompletedRounds,
+            onEnterScoring = {},
+            onEditArrow = { _, _, _, _ -> },
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Scoring – unscored")
+@Composable
+private fun PreviewScoringUnscored() {
+    Column(Modifier.background(BgPage).padding(20.dp)) {
+        ScoringPhaseView(
+            round = LiveRound(
+                number = 4,
+                arrows = listOf(
+                    LiveArrow(shotIndex = 1),
+                    LiveArrow(shotIndex = 2),
+                    LiveArrow(shotIndex = 3),
+                ),
+            ),
+            roundNumber = 4,
+            arrowsPerRound = 3,
+            selectedArrow = 0,
+            onSelectArrow = {},
+            onScoreArrow = { _, _, _ -> },
+            onDone = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Scoring – partially scored")
+@Composable
+private fun PreviewScoringPartial() {
+    Column(Modifier.background(BgPage).padding(20.dp)) {
+        ScoringPhaseView(
+            round = LiveRound(
+                number = 4,
+                arrows = listOf(
+                    LiveArrow(shotIndex = 1, zone = ScoreZone.GOLD, score = 10f),
+                    LiveArrow(shotIndex = 2, zone = ScoreZone.RED,  score = 8f),
+                    LiveArrow(shotIndex = 3),
+                ),
+            ),
+            roundNumber = 4,
+            arrowsPerRound = 3,
+            selectedArrow = 2,
+            onSelectArrow = {},
+            onScoreArrow = { _, _, _ -> },
+            onDone = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Zone distribution")
+@Composable
+private fun PreviewZoneDistribution() {
+    Column(Modifier.background(BgPage).padding(20.dp)) {
+        LiveZoneDistribution(
+            mapOf(
+                ScoreZone.GOLD  to 7,
+                ScoreZone.RED   to 4,
+                ScoreZone.BLUE  to 3,
+                ScoreZone.BLACK to 1,
+                ScoreZone.MISS  to 1,
+            )
+        )
     }
 }
